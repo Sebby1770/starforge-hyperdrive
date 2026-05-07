@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Starforge Hyperdrive is a Rust and WebAssembly visual playground with TypeScript controls."
+    />
+    <title>Starforge Hyperdrive</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <canvas id="starfield" aria-label="Rust-generated animated starfield"></canvas>
+
+      <section class="topbar" aria-label="Starforge controls">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>Starforge Hyperdrive</h1>
+            <p>Rust + WASM visual cockpit</p>
+          </div>
+        </div>
+
+        <div class="meter-cluster" aria-label="Runtime meters">
+          <div class="meter">
+            <span>FPS</span>
+            <strong id="fps">60</strong>
+          </div>
+          <div class="meter">
+            <span>Flux</span>
+            <strong id="flux">76%</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="control-dock" aria-label="Control dock">
+        <div class="mode-grid" role="group" aria-label="Visual modes">
+          <button class="mode-button active" type="button" data-mode="0">Aurora</button>
+          <button class="mode-button" type="button" data-mode="1">Solar</button>
+          <button class="mode-button" type="button" data-mode="2">Circuit</button>
+          <button class="mode-button" type="button" data-mode="3">Tunnel</button>
+        </div>
+
+        <label class="slider-wrap" for="intensity">
+          <span>Intensity</span>
+          <input id="intensity" min="15" max="135" value="76" type="range" />
+        </label>
+
+        <button id="shuffle" class="command-button" type="button">Shuffle</button>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

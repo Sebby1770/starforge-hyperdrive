@@ -1,0 +1,19 @@
+[package]
+name = "starforge-hyperdrive"
+version = "0.1.0"
+edition = "2024"
+description = "A Rust-powered WASM visual playground with a TypeScript control surface."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+libm = "0.2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true

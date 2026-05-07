@@ -1,0 +1,6 @@
+/target/
+/web/node_modules/
+/web/dist/
+/web/public/starforge_hyperdrive.wasm
+*.log
+.DS_Store

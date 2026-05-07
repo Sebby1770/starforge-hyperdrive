@@ -1,0 +1,18 @@
+{
+  "name": "starforge-hyperdrive-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:wasm": "../scripts/build-wasm.sh",
+    "dev": "npm run build:wasm && vite --host 127.0.0.1",
+    "build": "npm run build:wasm && tsc --noEmit && vite build",
+    "verify:wasm": "node ../scripts/verify-wasm.mjs",
+    "test": "npm run build && npm run verify:wasm",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}
