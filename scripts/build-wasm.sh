@@ -10,5 +10,12 @@ cargo build \
   --release \
   --target wasm32-unknown-unknown
 
-cp "$WASM_OUT" "$PUBLIC_OUT"
-printf 'Built %s\n' "$PUBLIC_OUT"
+mkdir -p "$(dirname "$PUBLIC_OUT")"
+
+if command -v wasm-opt >/dev/null 2>&1; then
+  wasm-opt -Oz "$WASM_OUT" -o "$PUBLIC_OUT"
+  printf 'Built and optimized %s\n' "$PUBLIC_OUT"
+else
+  cp "$WASM_OUT" "$PUBLIC_OUT"
+  printf 'Built %s (install binaryen for wasm-opt)\n' "$PUBLIC_OUT"
+fi

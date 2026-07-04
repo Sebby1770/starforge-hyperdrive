@@ -13,6 +13,22 @@
     <main class="app-shell">
       <canvas id="starfield" aria-label="Rust-generated animated starfield"></canvas>
 
+      <section id="loading-overlay" class="loading-overlay" aria-live="polite">
+        <div class="loading-card">
+          <span class="loading-pulse" aria-hidden="true"></span>
+          <h2>Engaging hyperdrive</h2>
+          <p>Compiling the Rust starfield into WebAssembly…</p>
+        </div>
+      </section>
+
+      <section id="error-panel" class="error-panel" hidden aria-live="assertive">
+        <div class="error-card">
+          <h2>Hyperdrive offline</h2>
+          <p>Unable to load the WASM engine.</p>
+          <button id="retry" class="command-button" type="button">Retry</button>
+        </div>
+      </section>
+
       <section class="topbar" aria-label="Starforge controls">
         <div class="brand-lockup">
           <span class="brand-mark" aria-hidden="true"></span>
@@ -28,18 +44,18 @@
             <strong id="fps">60</strong>
           </div>
           <div class="meter">
-            <span>Flux</span>
-            <strong id="flux">76%</strong>
+            <span>Intensity</span>
+            <strong id="intensity-value">76%</strong>
           </div>
         </div>
       </section>
 
       <section class="control-dock" aria-label="Control dock">
         <div class="mode-grid" role="group" aria-label="Visual modes">
-          <button class="mode-button active" type="button" data-mode="0">Aurora</button>
-          <button class="mode-button" type="button" data-mode="1">Solar</button>
-          <button class="mode-button" type="button" data-mode="2">Circuit</button>
-          <button class="mode-button" type="button" data-mode="3">Tunnel</button>
+          <button class="mode-button active" type="button" data-mode="0" aria-pressed="true">Aurora</button>
+          <button class="mode-button" type="button" data-mode="1" aria-pressed="false">Solar</button>
+          <button class="mode-button" type="button" data-mode="2" aria-pressed="false">Circuit</button>
+          <button class="mode-button" type="button" data-mode="3" aria-pressed="false">Tunnel</button>
         </div>
 
         <label class="slider-wrap" for="intensity">
@@ -47,8 +63,15 @@
           <input id="intensity" min="15" max="135" value="76" type="range" />
         </label>
 
-        <button id="shuffle" class="command-button" type="button">Shuffle</button>
+        <div class="command-row">
+          <button id="shuffle" class="command-button" type="button">Shuffle</button>
+          <button id="fullscreen" class="command-button" type="button" title="Fullscreen (F)">Fullscreen</button>
+        </div>
       </section>
+
+      <p class="keyboard-hints" aria-label="Keyboard shortcuts">
+        Keys: <kbd>1</kbd>–<kbd>4</kbd> modes · <kbd>Space</kbd> shuffle · <kbd>+</kbd>/<kbd>-</kbd> intensity · <kbd>F</kbd> fullscreen
+      </p>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

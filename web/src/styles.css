@@ -223,10 +223,112 @@ input[type="range"] {
   cursor: pointer;
 }
 
+.command-row {
+  display: flex;
+  gap: 8px;
+}
+
 .command-button {
   min-width: 108px;
   padding: 0 18px;
   background: rgba(255, 209, 102, 0.14);
+}
+
+.command-button:disabled,
+.mode-button:disabled,
+input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.loading-overlay,
+.error-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 7, 11, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.loading-overlay[hidden],
+.error-panel[hidden] {
+  display: none;
+}
+
+.loading-card,
+.error-card {
+  width: min(420px, 100%);
+  padding: 24px;
+  text-align: center;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+}
+
+.loading-card h2,
+.error-card h2 {
+  margin: 12px 0 8px;
+  font-size: 1.1rem;
+}
+
+.loading-card p,
+.error-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.loading-pulse {
+  display: inline-block;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--cyan), transparent 62%),
+    radial-gradient(circle at 70% 70%, var(--coral), transparent 58%);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.72;
+  }
+
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+.keyboard-hints {
+  position: absolute;
+  right: 24px;
+  bottom: 96px;
+  z-index: 2;
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  background: rgba(8, 14, 22, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+}
+
+.keyboard-hints kbd {
+  display: inline-block;
+  min-width: 1.2em;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
 }
 
 @media (max-width: 780px) {

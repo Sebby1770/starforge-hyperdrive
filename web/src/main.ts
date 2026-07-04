@@ -14,16 +14,40 @@ type StarforgeExports = {
 
 const canvas = document.querySelector<HTMLCanvasElement>("#starfield");
 const fpsDisplay = document.querySelector<HTMLElement>("#fps");
-const fluxDisplay = document.querySelector<HTMLElement>("#flux");
+const intensityDisplay = document.querySelector<HTMLElement>("#intensity-value");
 const intensityInput = document.querySelector<HTMLInputElement>("#intensity");
 const shuffleButton = document.querySelector<HTMLButtonElement>("#shuffle");
+const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen");
+const loadingOverlay = document.querySelector<HTMLElement>("#loading-overlay");
+const errorPanel = document.querySelector<HTMLElement>("#error-panel");
+const retryButton = document.querySelector<HTMLButtonElement>("#retry");
 const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".mode-button"));
 
-if (!canvas || !fpsDisplay || !fluxDisplay || !intensityInput || !shuffleButton) {
+if (
+  !canvas ||
+  !fpsDisplay ||
+  !intensityDisplay ||
+  !intensityInput ||
+  !shuffleButton ||
+  !fullscreenButton ||
+  !loadingOverlay ||
+  !errorPanel ||
+  !retryButton
+) {
   throw new Error("Starforge UI failed to mount.");
 }
 
-const context = canvas.getContext("2d", {
+const starfieldCanvas = canvas;
+const fpsNode = fpsDisplay;
+const intensityNode = intensityDisplay;
+const intensityInputEl = intensityInput;
+const shuffleButtonEl = shuffleButton;
+const fullscreenButtonEl = fullscreenButton;
+const loadingNode = loadingOverlay;
+const errorNode = errorPanel;
+const retryButtonEl = retryButton;
+
+const context = starfieldCanvas.getContext("2d", {
   alpha: false,
   desynchronized: true
 });
@@ -32,81 +56,116 @@ if (!context) {
   throw new Error("2D canvas is unavailable.");
 }
 
-const starfieldCanvas = canvas;
 const renderContext = context;
-const fpsNode = fpsDisplay;
-const fluxNode = fluxDisplay;
-const wasm = await loadWasm();
-const width = wasm.width();
-const height = wasm.height();
-const bufferSize = width * height * 4;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const targetFrameMs = reducedMotion ? 1000 / 15 : 1000 / 45;
 
-starfieldCanvas.width = width;
-starfieldCanvas.height = height;
-renderContext.imageSmoothingEnabled = true;
-
-let framebuffer = new Uint8ClampedArray(wasm.memory.buffer, wasm.framebuffer_ptr(), bufferSize);
-let imageData = new ImageData(framebuffer, width, height);
+let wasm: StarforgeExports | null = null;
+let width = 0;
+let height = 0;
+let bufferSize = 0;
+let framebuffer = new Uint8ClampedArray();
+let imageData = new ImageData(1, 1);
 let pointerDown = false;
+let capturedPointerId: number | null = null;
+let lastPointer = { x: 0, y: 0 };
 let currentMode = 0;
 let lastRender = performance.now();
 let fpsAverage = 45;
 let seed = Date.now() % 100_000;
-const targetFrameMs = 1000 / 45;
+let animationHandle = 0;
 
-wasm.reseed(seed);
-wasm.set_intensity(Number(intensityInput.value) / 100);
+void bootstrap();
 
-window.addEventListener("resize", fitCanvas, { passive: true });
-fitCanvas();
+async function bootstrap() {
+  showLoading();
+  hideError();
 
-starfieldCanvas.addEventListener("pointermove", (event) => {
-  starfieldCanvas.setPointerCapture(event.pointerId);
-  sendPointer(event);
-});
+  try {
+    wasm = await loadWasm();
+    width = wasm.width();
+    height = wasm.height();
+    bufferSize = width * height * 4;
 
-starfieldCanvas.addEventListener("pointerdown", (event) => {
-  pointerDown = true;
-  starfieldCanvas.setPointerCapture(event.pointerId);
-  sendPointer(event);
-  bumpSeed(7);
-});
+    starfieldCanvas.width = width;
+    starfieldCanvas.height = height;
+    renderContext.imageSmoothingEnabled = true;
 
-starfieldCanvas.addEventListener("pointerup", (event) => {
-  pointerDown = false;
-  sendPointer(event);
-});
+    framebuffer = new Uint8ClampedArray(wasm.memory.buffer, wasm.framebuffer_ptr(), bufferSize);
+    imageData = new ImageData(framebuffer, width, height);
 
-starfieldCanvas.addEventListener("pointerleave", () => {
-  pointerDown = false;
-  wasm.set_pointer(0, 0, 0);
-});
+    wasm.reseed(seed);
+    wasm.set_intensity(Number(intensityInputEl.value) / 100);
+    intensityNode.textContent = `${intensityInputEl.value}%`;
 
-modeButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    currentMode = Number(button.dataset.mode ?? 0);
-    wasm.set_mode(currentMode);
-    modeButtons.forEach((item) => item.classList.toggle("active", item === button));
-    bumpSeed(currentMode + 3);
+    syncModeButtons();
+    hideLoading();
+    setControlsEnabled(true);
+    bindControls();
+    restoreStateFromUrl();
+
+    window.addEventListener("resize", fitCanvas, { passive: true });
+    fitCanvas();
+    animationHandle = requestAnimationFrame(frame);
+  } catch (error) {
+    hideLoading();
+    setControlsEnabled(false);
+    showError(error);
+  }
+}
+
+function bindControls() {
+  starfieldCanvas.addEventListener("pointermove", (event) => {
+    if (capturedPointerId === event.pointerId) {
+      sendPointer(event);
+    }
   });
-});
 
-intensityInput.addEventListener("input", () => {
-  const flux = Number(intensityInput.value);
-  wasm.set_intensity(flux / 100);
-  fluxNode.textContent = `${flux}%`;
-});
+  starfieldCanvas.addEventListener("pointerdown", (event) => {
+    pointerDown = true;
+    capturedPointerId = event.pointerId;
+    starfieldCanvas.setPointerCapture(event.pointerId);
+    sendPointer(event);
+  });
 
-shuffleButton.addEventListener("click", () => bumpSeed(31));
+  starfieldCanvas.addEventListener("pointerup", releasePointer);
+  starfieldCanvas.addEventListener("pointercancel", releasePointer);
 
-requestAnimationFrame(frame);
+  starfieldCanvas.addEventListener("pointerleave", () => {
+    if (!pointerDown && wasm) {
+      wasm.set_pointer(lastPointer.x, lastPointer.y, 0);
+    }
+  });
+
+  modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setMode(Number(button.dataset.mode ?? 0));
+    });
+  });
+
+  intensityInputEl.addEventListener("input", () => {
+    const intensity = Number(intensityInputEl.value);
+    wasm?.set_intensity(intensity / 100);
+    intensityNode.textContent = `${intensity}%`;
+    syncUrlState();
+  });
+
+  shuffleButtonEl.addEventListener("click", () => bumpSeed(31));
+  fullscreenButtonEl.addEventListener("click", toggleFullscreen);
+  retryButtonEl.addEventListener("click", () => {
+    cancelAnimationFrame(animationHandle);
+    void bootstrap();
+  });
+
+  window.addEventListener("keydown", handleKeydown);
+}
 
 async function loadWasm(): Promise<StarforgeExports> {
   const wasmUrl = `${import.meta.env.BASE_URL}starforge_hyperdrive.wasm`;
   const response = await fetch(wasmUrl);
 
   if (!response.ok) {
-    throw new Error(`Unable to load ${wasmUrl}`);
+    throw new Error(`Unable to load ${wasmUrl}. Run npm run build:wasm first.`);
   }
 
   const bytes = await response.arrayBuffer();
@@ -115,8 +174,12 @@ async function loadWasm(): Promise<StarforgeExports> {
 }
 
 function frame(now: number) {
+  if (!wasm) {
+    return;
+  }
+
   if (now - lastRender < targetFrameMs) {
-    requestAnimationFrame(frame);
+    animationHandle = requestAnimationFrame(frame);
     return;
   }
 
@@ -137,13 +200,28 @@ function frame(now: number) {
     fpsNode.textContent = String(Math.round(fpsAverage));
   }
 
-  requestAnimationFrame(frame);
+  animationHandle = requestAnimationFrame(frame);
+}
+
+function releasePointer(event: PointerEvent) {
+  pointerDown = false;
+  sendPointer(event);
+
+  if (capturedPointerId === event.pointerId) {
+    starfieldCanvas.releasePointerCapture(event.pointerId);
+    capturedPointerId = null;
+  }
 }
 
 function sendPointer(event: PointerEvent) {
+  if (!wasm) {
+    return;
+  }
+
   const rect = starfieldCanvas.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2 * (width / height);
   const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+  lastPointer = { x, y };
   wasm.set_pointer(x, y, pointerDown ? 1 : 0);
 }
 
@@ -159,7 +237,147 @@ function fitCanvas() {
   starfieldCanvas.style.height = `${Math.ceil(height * scale)}px`;
 }
 
+function setMode(mode: number) {
+  if (!wasm) {
+    return;
+  }
+
+  currentMode = Math.max(0, Math.min(3, mode));
+  wasm.set_mode(currentMode);
+  syncModeButtons();
+  bumpSeed(currentMode + 3);
+}
+
+function syncModeButtons() {
+  modeButtons.forEach((button) => {
+    const active = Number(button.dataset.mode ?? 0) === currentMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
 function bumpSeed(amount: number) {
+  if (!wasm) {
+    return;
+  }
+
   seed = (seed + amount * 997 + currentMode * 101) % 100_000;
   wasm.reseed(seed);
+  syncUrlState();
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (!wasm || event.target instanceof HTMLInputElement) {
+    return;
+  }
+
+  switch (event.key) {
+    case "1":
+    case "2":
+    case "3":
+    case "4":
+      setMode(Number(event.key) - 1);
+      event.preventDefault();
+      break;
+    case " ":
+      bumpSeed(31);
+      event.preventDefault();
+      break;
+    case "+":
+    case "=":
+      adjustIntensity(5);
+      event.preventDefault();
+      break;
+    case "-":
+    case "_":
+      adjustIntensity(-5);
+      event.preventDefault();
+      break;
+    case "f":
+    case "F":
+      toggleFullscreen();
+      event.preventDefault();
+      break;
+    default:
+      break;
+  }
+}
+
+function adjustIntensity(delta: number) {
+  const next = Math.max(15, Math.min(135, Number(intensityInputEl.value) + delta));
+  intensityInputEl.value = String(next);
+  wasm?.set_intensity(next / 100);
+  intensityNode.textContent = `${next}%`;
+  syncUrlState();
+}
+
+function toggleFullscreen() {
+  const shell = document.querySelector<HTMLElement>(".app-shell");
+  if (!shell) {
+    return;
+  }
+
+  if (document.fullscreenElement) {
+    void document.exitFullscreen();
+    return;
+  }
+
+  void shell.requestFullscreen();
+}
+
+function syncUrlState() {
+  const params = new URLSearchParams();
+  params.set("mode", String(currentMode));
+  params.set("intensity", intensityInputEl.value);
+  params.set("seed", String(seed));
+  history.replaceState(null, "", `${location.pathname}?${params.toString()}`);
+}
+
+function restoreStateFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const mode = Number(params.get("mode"));
+  const intensity = Number(params.get("intensity"));
+  const urlSeed = Number(params.get("seed"));
+
+  if (!Number.isNaN(mode) && mode >= 0 && mode <= 3) {
+    setMode(mode);
+  }
+
+  if (!Number.isNaN(intensity) && intensity >= 15 && intensity <= 135) {
+    intensityInputEl.value = String(intensity);
+    wasm?.set_intensity(intensity / 100);
+    intensityNode.textContent = `${intensity}%`;
+  }
+
+  if (!Number.isNaN(urlSeed) && urlSeed >= 0) {
+    seed = urlSeed % 100_000;
+    wasm?.reseed(seed);
+  }
+}
+
+function setControlsEnabled(enabled: boolean) {
+  intensityInputEl.disabled = !enabled;
+  shuffleButtonEl.disabled = !enabled;
+  fullscreenButtonEl.disabled = !enabled;
+  modeButtons.forEach((button) => {
+    button.disabled = !enabled;
+  });
+}
+
+function showLoading() {
+  loadingNode.hidden = false;
+}
+
+function hideLoading() {
+  loadingNode.hidden = true;
+}
+
+function showError(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unknown error while loading WASM.";
+  errorNode.querySelector("p")!.textContent = message;
+  errorNode.hidden = false;
+}
+
+function hideError() {
+  errorNode.hidden = true;
 }

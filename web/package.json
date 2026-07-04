@@ -6,6 +6,7 @@
   "scripts": {
     "build:wasm": "../scripts/build-wasm.sh",
     "dev": "npm run build:wasm && vite --host 127.0.0.1",
+    "dev:vite": "vite --host 127.0.0.1",
     "build": "npm run build:wasm && tsc --noEmit && vite build",
     "verify:wasm": "node ../scripts/verify-wasm.mjs",
     "test": "npm run build && npm run verify:wasm",
