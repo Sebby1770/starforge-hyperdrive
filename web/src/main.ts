@@ -1,4 +1,5 @@
 import "./styles.css";
+import { initSpotlightCards, initUiChrome } from "./effects";
 import { createRenderer, type RenderBackend, type RenderMetrics } from "./renderer";
 
 type StarforgeExports = {
@@ -75,6 +76,7 @@ let lastRender = performance.now();
 let fpsAverage = 45;
 let seed = Date.now() % 100_000;
 let animationHandle = 0;
+let cleanupEffects: (() => void) | null = null;
 
 void bootstrap();
 
@@ -102,6 +104,13 @@ async function bootstrap() {
     hideLoading();
     setControlsEnabled(true);
     bindControls();
+    cleanupEffects?.();
+    const stopSpotlight = initSpotlightCards();
+    const stopUiChrome = initUiChrome();
+    cleanupEffects = () => {
+      stopSpotlight();
+      stopUiChrome();
+    };
     restoreStateFromUrl();
 
     window.addEventListener("resize", fitCanvas, { passive: true });

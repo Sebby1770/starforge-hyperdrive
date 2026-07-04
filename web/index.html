@@ -7,63 +7,71 @@
       name="description"
       content="Starforge Hyperdrive is a Rust and WebAssembly visual playground with TypeScript controls."
     />
+    <meta name="theme-color" content="#05070b" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%2305070b'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='%234de7ff' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='4' fill='%23ffd166'/%3E%3C/svg%3E" />
     <title>Starforge Hyperdrive</title>
   </head>
   <body>
     <main class="app-shell">
+      <div class="aurora-layer" aria-hidden="true">
+        <span class="aurora-blob aurora-blob-a"></span>
+        <span class="aurora-blob aurora-blob-b"></span>
+        <span class="aurora-blob aurora-blob-c"></span>
+      </div>
+
       <canvas id="starfield" aria-label="Rust-generated animated starfield"></canvas>
 
       <section id="loading-overlay" class="loading-overlay" aria-live="polite">
-        <div class="loading-card">
+        <div class="loading-card spotlight-card glow-border">
           <span class="loading-pulse" aria-hidden="true"></span>
-          <h2>Engaging hyperdrive</h2>
+          <h2 class="gradient-text">Engaging hyperdrive</h2>
           <p>Compiling the Rust starfield into WebAssembly…</p>
         </div>
       </section>
 
       <section id="error-panel" class="error-panel" hidden aria-live="assertive">
-        <div class="error-card">
+        <div class="error-card spotlight-card glow-border">
           <h2>Hyperdrive offline</h2>
           <p>Unable to load the WASM engine.</p>
-          <button id="retry" class="command-button" type="button">Retry</button>
+          <button id="retry" class="command-button glow-button" type="button">Retry</button>
         </div>
       </section>
 
-      <section class="topbar" aria-label="Starforge controls">
-        <div class="brand-lockup">
+      <section class="topbar ui-chrome" aria-label="Starforge controls">
+        <div class="brand-lockup spotlight-card glow-border">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
-            <h1>Starforge Hyperdrive</h1>
+            <h1 class="gradient-text">Starforge Hyperdrive</h1>
             <p>Rust + WASM visual cockpit</p>
           </div>
         </div>
 
         <div class="meter-cluster" aria-label="Runtime meters">
-          <div class="meter">
+          <div class="meter spotlight-card">
             <span>FPS</span>
             <strong id="fps">60</strong>
           </div>
-          <div class="meter">
+          <div class="meter spotlight-card">
             <span>Flux</span>
             <strong id="flux">0%</strong>
           </div>
-          <div class="meter">
+          <div class="meter spotlight-card">
             <span>Render</span>
             <strong id="render-ms">0.0ms</strong>
           </div>
-          <div class="meter">
+          <div class="meter spotlight-card">
             <span>Backend</span>
             <strong id="backend">WebGL</strong>
           </div>
         </div>
       </section>
 
-      <section class="control-dock" aria-label="Control dock">
+      <section class="control-dock ui-chrome spotlight-card glow-border" aria-label="Control dock">
         <div class="mode-grid" role="group" aria-label="Visual modes">
-          <button class="mode-button active" type="button" data-mode="0" aria-pressed="true">Aurora</button>
-          <button class="mode-button" type="button" data-mode="1" aria-pressed="false">Solar</button>
-          <button class="mode-button" type="button" data-mode="2" aria-pressed="false">Circuit</button>
-          <button class="mode-button" type="button" data-mode="3" aria-pressed="false">Tunnel</button>
+          <button class="mode-button glow-button active" type="button" data-mode="0" aria-pressed="true">Aurora</button>
+          <button class="mode-button glow-button" type="button" data-mode="1" aria-pressed="false">Solar</button>
+          <button class="mode-button glow-button" type="button" data-mode="2" aria-pressed="false">Circuit</button>
+          <button class="mode-button glow-button" type="button" data-mode="3" aria-pressed="false">Tunnel</button>
         </div>
 
         <label class="slider-wrap" for="intensity">
@@ -72,13 +80,14 @@
         </label>
 
         <div class="command-row">
-          <button id="shuffle" class="command-button" type="button">Shuffle</button>
-          <button id="fullscreen" class="command-button" type="button" title="Fullscreen (F)">Fullscreen</button>
+          <button id="shuffle" class="command-button glow-button" type="button">Shuffle</button>
+          <button id="fullscreen" class="command-button glow-button" type="button" title="Fullscreen (F)">Fullscreen</button>
+          <button id="hide-ui" class="command-button glow-button" type="button" title="Hide UI (H)" aria-pressed="false">Hide UI</button>
         </div>
       </section>
 
-      <p class="keyboard-hints" aria-label="Keyboard shortcuts">
-        Keys: <kbd>1</kbd>–<kbd>4</kbd> modes · <kbd>Space</kbd> shuffle · <kbd>+</kbd>/<kbd>-</kbd> intensity · <kbd>F</kbd> fullscreen
+      <p class="keyboard-hints ui-chrome" aria-label="Keyboard shortcuts">
+        Keys: <kbd>1</kbd>–<kbd>4</kbd> modes · <kbd>Space</kbd> shuffle · <kbd>+</kbd>/<kbd>-</kbd> intensity · <kbd>F</kbd> fullscreen · <kbd>H</kbd> hide UI
       </p>
     </main>
 
