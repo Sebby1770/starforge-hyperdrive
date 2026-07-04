@@ -2,7 +2,9 @@
 
 An interactive Rust + WebAssembly visual playground wrapped in a TypeScript/Vite cockpit.
 
-See [CHANGELOG.md](CHANGELOG.md) for release history. Move across the canvas to bend the starfield, press to pull the scene into a denser gravity well, and jump between four generated palettes.
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
+Move across the canvas to bend the starfield, press to pull the scene into a denser gravity well, and jump between four generated palettes.
 
 ## Stack
 
