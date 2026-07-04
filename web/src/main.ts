@@ -1,4 +1,5 @@
 import "./styles.css";
+import { createRenderer, type RenderBackend, type RenderMetrics } from "./renderer";
 
 type StarforgeExports = {
   memory: WebAssembly.Memory;
@@ -6,6 +7,7 @@ type StarforgeExports = {
   height: () => number;
   framebuffer_ptr: () => number;
   render: (elapsedMs: number) => void;
+  flux: () => number;
   set_pointer: (x: number, y: number, down: number) => void;
   set_mode: (mode: number) => void;
   set_intensity: (value: number) => void;
@@ -14,6 +16,9 @@ type StarforgeExports = {
 
 const canvas = document.querySelector<HTMLCanvasElement>("#starfield");
 const fpsDisplay = document.querySelector<HTMLElement>("#fps");
+const fluxDisplay = document.querySelector<HTMLElement>("#flux");
+const renderDisplay = document.querySelector<HTMLElement>("#render-ms");
+const backendDisplay = document.querySelector<HTMLElement>("#backend");
 const intensityDisplay = document.querySelector<HTMLElement>("#intensity-value");
 const intensityInput = document.querySelector<HTMLInputElement>("#intensity");
 const shuffleButton = document.querySelector<HTMLButtonElement>("#shuffle");
@@ -26,6 +31,9 @@ const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".mo
 if (
   !canvas ||
   !fpsDisplay ||
+  !fluxDisplay ||
+  !renderDisplay ||
+  !backendDisplay ||
   !intensityDisplay ||
   !intensityInput ||
   !shuffleButton ||
@@ -39,6 +47,9 @@ if (
 
 const starfieldCanvas = canvas;
 const fpsNode = fpsDisplay;
+const fluxNode = fluxDisplay;
+const renderNode = renderDisplay;
+const backendNode = backendDisplay;
 const intensityNode = intensityDisplay;
 const intensityInputEl = intensityInput;
 const shuffleButtonEl = shuffleButton;
@@ -47,25 +58,15 @@ const loadingNode = loadingOverlay;
 const errorNode = errorPanel;
 const retryButtonEl = retryButton;
 
-const context = starfieldCanvas.getContext("2d", {
-  alpha: false,
-  desynchronized: true
-});
-
-if (!context) {
-  throw new Error("2D canvas is unavailable.");
-}
-
-const renderContext = context;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const targetFrameMs = reducedMotion ? 1000 / 15 : 1000 / 45;
 
+let renderer: ReturnType<typeof createRenderer> | null = null;
 let wasm: StarforgeExports | null = null;
 let width = 0;
 let height = 0;
 let bufferSize = 0;
 let framebuffer = new Uint8ClampedArray();
-let imageData = new ImageData(1, 1);
 let pointerDown = false;
 let capturedPointerId: number | null = null;
 let lastPointer = { x: 0, y: 0 };
@@ -82,17 +83,16 @@ async function bootstrap() {
   hideError();
 
   try {
+    renderer = createRenderer(starfieldCanvas);
     wasm = await loadWasm();
     width = wasm.width();
     height = wasm.height();
     bufferSize = width * height * 4;
 
-    starfieldCanvas.width = width;
-    starfieldCanvas.height = height;
-    renderContext.imageSmoothingEnabled = true;
+    renderer.resize(width, height);
+    backendNode.textContent = renderer.backend.toUpperCase();
 
     framebuffer = new Uint8ClampedArray(wasm.memory.buffer, wasm.framebuffer_ptr(), bufferSize);
-    imageData = new ImageData(framebuffer, width, height);
 
     wasm.reseed(seed);
     wasm.set_intensity(Number(intensityInputEl.value) / 100);
@@ -154,6 +154,7 @@ function bindControls() {
   fullscreenButtonEl.addEventListener("click", toggleFullscreen);
   retryButtonEl.addEventListener("click", () => {
     cancelAnimationFrame(animationHandle);
+    renderer?.destroy();
     void bootstrap();
   });
 
@@ -170,11 +171,15 @@ async function loadWasm(): Promise<StarforgeExports> {
 
   const bytes = await response.arrayBuffer();
   const { instance } = await WebAssembly.instantiate(bytes, {});
-  return instance.exports as StarforgeExports;
+  const exports = instance.exports as StarforgeExports;
+  if (typeof exports.flux !== "function") {
+    throw new Error("WASM build is missing the flux() export. Rebuild with npm run build:wasm.");
+  }
+  return exports;
 }
 
 function frame(now: number) {
-  if (!wasm) {
+  if (!wasm || !renderer) {
     return;
   }
 
@@ -187,20 +192,31 @@ function frame(now: number) {
   lastRender = now;
   fpsAverage = fpsAverage * 0.92 + (1000 / Math.max(delta, 1)) * 0.08;
 
+  const renderStart = performance.now();
   wasm.render(now);
 
   if (framebuffer.buffer !== wasm.memory.buffer) {
     framebuffer = new Uint8ClampedArray(wasm.memory.buffer, wasm.framebuffer_ptr(), bufferSize);
-    imageData = new ImageData(framebuffer, width, height);
   }
 
-  renderContext.putImageData(imageData, 0, 0);
+  const metrics = renderer.draw(framebuffer, width, height);
+  updateRenderMetrics(metrics, performance.now() - renderStart);
+  fluxNode.textContent = `${Math.round(wasm.flux() * 100)}%`;
 
   if (Math.round(now / 250) % 2 === 0) {
     fpsNode.textContent = String(Math.round(fpsAverage));
   }
 
   animationHandle = requestAnimationFrame(frame);
+}
+
+function updateRenderMetrics(metrics: RenderMetrics, wasmMs: number) {
+  renderNode.textContent = `${(wasmMs + metrics.uploadMs + metrics.drawMs).toFixed(1)}ms`;
+  backendNode.textContent = labelBackend(metrics.backend);
+}
+
+function labelBackend(backend: RenderBackend) {
+  return backend === "webgl" ? "WebGL" : "Canvas";
 }
 
 function releasePointer(event: PointerEvent) {

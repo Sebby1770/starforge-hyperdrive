@@ -146,7 +146,7 @@ p {
 }
 
 .meter {
-  min-width: 78px;
+  min-width: 72px;
   padding: 10px 12px;
   background: var(--panel-strong);
   border: 1px solid var(--line);

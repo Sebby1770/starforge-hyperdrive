@@ -14,6 +14,7 @@ static mut POINTER_DOWN: f32 = 0.0;
 static mut MODE: u32 = 0;
 static mut INTENSITY: f32 = 0.76;
 static mut SEED: f32 = 13.37;
+static mut FLUX: f32 = 0.0;
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -67,6 +68,11 @@ pub extern "C" fn reseed(value: u32) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn flux() -> f32 {
+    unsafe { FLUX }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn render(elapsed_ms: f32) {
     let time = elapsed_ms * 0.001;
     let (pointer_x, pointer_y, pointer_down, mode, intensity, seed) =
@@ -74,6 +80,7 @@ pub extern "C" fn render(elapsed_ms: f32) {
 
     let aspect = WIDTH as f32 / HEIGHT as f32;
     let fb = core::ptr::addr_of_mut!(FRAMEBUFFER) as *mut u8;
+    let mut flux_total = 0.0_f32;
 
     for y in 0..HEIGHT {
         let ny = ((y as f32 / HEIGHT as f32) - 0.5) * 2.0;
@@ -146,6 +153,8 @@ pub extern "C" fn render(elapsed_ms: f32) {
             g = tonemap(g * exposure + spark * 0.85 + cursor_bloom * 0.36);
             b = tonemap(b * exposure + spark * 1.0 + cursor_bloom * 0.46);
 
+            flux_total += exposure;
+
             let idx = (y * WIDTH + x) * CHANNELS;
             unsafe {
                 *fb.add(idx) = to_byte(r);
@@ -154,6 +163,10 @@ pub extern "C" fn render(elapsed_ms: f32) {
                 *fb.add(idx + 3) = 255;
             }
         }
+    }
+
+    unsafe {
+        FLUX = flux_total / (WIDTH * HEIGHT) as f32;
     }
 }
 

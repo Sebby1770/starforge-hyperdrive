@@ -44,8 +44,16 @@
             <strong id="fps">60</strong>
           </div>
           <div class="meter">
-            <span>Intensity</span>
-            <strong id="intensity-value">76%</strong>
+            <span>Flux</span>
+            <strong id="flux">0%</strong>
+          </div>
+          <div class="meter">
+            <span>Render</span>
+            <strong id="render-ms">0.0ms</strong>
+          </div>
+          <div class="meter">
+            <span>Backend</span>
+            <strong id="backend">WebGL</strong>
           </div>
         </div>
       </section>
@@ -59,7 +67,7 @@
         </div>
 
         <label class="slider-wrap" for="intensity">
-          <span>Intensity</span>
+          <span>Intensity <strong id="intensity-value">76%</strong></span>
           <input id="intensity" min="15" max="135" value="76" type="range" />
         </label>
 

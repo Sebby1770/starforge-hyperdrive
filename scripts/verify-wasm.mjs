@@ -17,7 +17,8 @@ const requiredExports = [
   "set_pointer",
   "set_mode",
   "set_intensity",
-  "reseed"
+  "reseed",
+  "flux"
 ];
 
 for (const name of requiredExports) {

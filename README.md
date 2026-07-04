@@ -5,7 +5,8 @@ An interactive Rust + WebAssembly visual playground wrapped in a TypeScript/Vite
 ## Stack
 
 - Rust renders every pixel into a WebAssembly framebuffer.
-- TypeScript streams the framebuffer into a canvas and manages controls.
+- TypeScript uploads the framebuffer via WebGL (Canvas2D fallback) and manages controls.
+- A real `flux()` meter reports mean frame energy from the WASM engine.
 - Vite handles the local dev server and production build.
 - CSS builds the full-screen cockpit UI.
 
