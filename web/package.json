@@ -8,11 +8,12 @@
     "dev": "npm run build:wasm && vite --host 127.0.0.1",
     "build": "npm run build:wasm && tsc --noEmit && vite build",
     "verify:wasm": "node ../scripts/verify-wasm.mjs",
-    "test": "npm run build && npm run verify:wasm",
+    "verify:keyboard": "node ../scripts/verify-keyboard.mjs",
+    "test": "npm run build && npm run verify:wasm && npm run verify:keyboard",
     "preview": "vite preview --host 127.0.0.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vite": "^7.1.12"
+    "vite": "^7.3.6"
   }
 }

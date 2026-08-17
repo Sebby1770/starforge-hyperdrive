@@ -5,7 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WASM_OUT="$ROOT_DIR/target/wasm32-unknown-unknown/release/starforge_hyperdrive.wasm"
 PUBLIC_OUT="$ROOT_DIR/web/public/starforge_hyperdrive.wasm"
 
+mkdir -p "$(dirname "$PUBLIC_OUT")"
+
 cargo build \
+  --locked \
   --manifest-path "$ROOT_DIR/Cargo.toml" \
   --release \
   --target wasm32-unknown-unknown

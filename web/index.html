@@ -10,45 +10,108 @@
     <title>Starforge Hyperdrive</title>
   </head>
   <body>
-    <main class="app-shell">
-      <canvas id="starfield" aria-label="Rust-generated animated starfield"></canvas>
+    <main id="app" class="app-shell" aria-busy="true">
+      <canvas
+        id="starfield"
+        role="img"
+        aria-label="Interactive Rust-generated Aurora starfield"
+      >
+        Your browser needs canvas support to render Starforge Hyperdrive.
+      </canvas>
 
-      <section class="topbar" aria-label="Starforge controls">
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <header class="topbar">
         <div class="brand-lockup">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
             <h1>Starforge Hyperdrive</h1>
-            <p>Rust + WASM visual cockpit</p>
+            <p>Deterministic Rust + WASM light synthesizer</p>
           </div>
         </div>
 
-        <div class="meter-cluster" aria-label="Runtime meters">
+        <div class="meter-cluster" aria-label="Live instrument telemetry">
           <div class="meter">
             <span>FPS</span>
-            <strong id="fps">60</strong>
+            <strong id="fps">—</strong>
           </div>
           <div class="meter">
             <span>Flux</span>
             <strong id="flux">76%</strong>
           </div>
+          <div class="meter meter-wide">
+            <span>Drive</span>
+            <strong id="motion-state">Loading</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="control-dock" aria-label="Starforge instrument controls">
+        <div class="control-group mode-panel">
+          <div class="group-heading">
+            <span>Field mode</span>
+            <kbd>1–4</kbd>
+          </div>
+          <div class="mode-grid" role="group" aria-label="Visual modes">
+            <button class="mode-button active" type="button" data-mode="0" aria-pressed="true">
+              <span>01</span>Aurora
+            </button>
+            <button class="mode-button" type="button" data-mode="1" aria-pressed="false">
+              <span>02</span>Solar
+            </button>
+            <button class="mode-button" type="button" data-mode="2" aria-pressed="false">
+              <span>03</span>Circuit
+            </button>
+            <button class="mode-button" type="button" data-mode="3" aria-pressed="false">
+              <span>04</span>Tunnel
+            </button>
+          </div>
+        </div>
+
+        <div class="control-group tuning-panel">
+          <label class="slider-wrap" for="intensity">
+            <span>Intensity <output id="intensity-output" for="intensity">76%</output></span>
+            <input
+              id="intensity"
+              min="15"
+              max="135"
+              value="76"
+              type="range"
+              aria-describedby="intensity-hint"
+            />
+          </label>
+          <span id="intensity-hint" class="sr-only">Adjust the light field intensity from 15 to 135 percent.</span>
+
+          <label class="seed-wrap" for="seed">
+            <span>System seed</span>
+            <input id="seed" min="0" max="4294967295" inputmode="numeric" type="number" />
+          </label>
+
+          <button id="shuffle" class="command-button command-accent" type="button" title="Randomise seed (R)">
+            Randomise <kbd>R</kbd>
+          </button>
+        </div>
+
+        <div class="control-group command-grid" aria-label="Playback and sharing commands">
+          <button id="playback" class="command-button" type="button" title="Play or pause animation (Space)">
+            <span id="playback-label">Pause</span> <kbd>Space</kbd>
+          </button>
+          <button id="copy-link" class="command-button" type="button" title="Copy a link to this instrument state (C)">
+            Copy link <kbd>C</kbd>
+          </button>
+          <button id="export-png" class="command-button" type="button" title="Export a high-resolution PNG (E)">
+            Export PNG <kbd>E</kbd>
+          </button>
+          <button id="fullscreen" class="command-button" type="button" title="Toggle fullscreen (F)">
+            <span id="fullscreen-label">Fullscreen</span> <kbd>F</kbd>
+          </button>
         </div>
       </section>
 
-      <section class="control-dock" aria-label="Control dock">
-        <div class="mode-grid" role="group" aria-label="Visual modes">
-          <button class="mode-button active" type="button" data-mode="0">Aurora</button>
-          <button class="mode-button" type="button" data-mode="1">Solar</button>
-          <button class="mode-button" type="button" data-mode="2">Circuit</button>
-          <button class="mode-button" type="button" data-mode="3">Tunnel</button>
-        </div>
-
-        <label class="slider-wrap" for="intensity">
-          <span>Intensity</span>
-          <input id="intensity" min="15" max="135" value="76" type="range" />
-        </label>
-
-        <button id="shuffle" class="command-button" type="button">Shuffle</button>
-      </section>
+      <div class="status-rail">
+        <p id="status" role="status" aria-live="polite">Igniting WebAssembly engine…</p>
+        <p class="pointer-hint">Move to bend the field · press to deepen gravity</p>
+      </div>
     </main>
 
     <script type="module" src="/src/main.ts"></script>
