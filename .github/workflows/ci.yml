@@ -19,7 +19,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
 
       - name: Install Node.js
@@ -31,6 +31,9 @@ jobs:
 
       - name: Check Rust formatting
         run: cargo fmt --check
+
+      - name: Lint Rust
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Check native Rust library
         run: cargo check --locked
@@ -45,6 +48,14 @@ jobs:
       - name: Audit web dependencies
         working-directory: web
         run: npm audit --audit-level=high
+
+      - name: Type-check the control surface
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Run web unit tests
+        working-directory: web
+        run: npm run test:unit
 
       - name: Build and verify WebAssembly app
         working-directory: web

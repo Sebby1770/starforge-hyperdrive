@@ -583,3 +583,91 @@ input:focus-visible {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Spotlight cards and hide-UI mode
+
+   initSpotlightCards() writes --spot-x / --spot-y on every .spotlight-card as
+   the pointer moves; the overlay below turns those into a soft highlight that
+   follows the cursor. Hide-UI mode collapses the chrome so the field can be
+   captured on its own.
+   -------------------------------------------------------------------------- */
+
+.spotlight-card {
+  position: relative;
+  isolation: isolate;
+}
+
+.spotlight-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  background: radial-gradient(
+    240px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    rgba(150, 210, 255, 0.16),
+    transparent 68%
+  );
+}
+
+.spotlight-card:hover::after,
+.spotlight-card:focus-within::after {
+  opacity: 1;
+}
+
+.app-shell.ui-hidden .control-dock,
+.app-shell.ui-hidden .status-rail,
+.app-shell.ui-hidden .meter-cluster {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+}
+
+.app-shell.ui-hidden .control-dock,
+.app-shell.ui-hidden .status-rail,
+.app-shell.ui-hidden .meter-cluster,
+.control-dock,
+.status-rail,
+.meter-cluster {
+  transition:
+    opacity 260ms ease,
+    transform 260ms ease;
+}
+
+/* The toggle lives in the header, outside everything ui-hidden collapses, so
+   it stays clickable and is never stranded behind the mode it activates. */
+.chrome-toggle {
+  align-self: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(150, 200, 255, 0.28);
+  background: rgba(10, 18, 32, 0.62);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.chrome-toggle:hover,
+.chrome-toggle:focus-visible {
+  border-color: rgba(150, 200, 255, 0.55);
+  background: rgba(18, 30, 52, 0.78);
+}
+
+.app-shell.ui-hidden .topbar > .brand-lockup {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-card::after,
+  .control-dock,
+  .status-rail,
+  .meter-cluster {
+    transition: none;
+  }
+}

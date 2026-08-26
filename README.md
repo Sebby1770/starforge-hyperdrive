@@ -30,6 +30,7 @@ Open the printed local URL. The build helper creates `web/public` automatically 
 - **Copy link:** copy a canonical URL containing the current mode, intensity, and seed.
 - **Export PNG:** save the current frame at 1280 × 784 pixels.
 - **Fullscreen:** enter or leave the focused instrument view.
+- **Hide UI:** collapse the chrome for a clean capture; the toggle stays visible.
 - **Pointer:** move to steer the gravitational centre; press to increase its pull.
 
 Keyboard shortcuts work whenever focus is not on a button, link, form field, or other interactive element, so native `Space` activation and control behaviour are preserved:
@@ -42,8 +43,27 @@ Keyboard shortcuts work whenever focus is not on a button, link, form field, or 
 | `C` | Copy the share link |
 | `E` | Export a PNG |
 | `F` | Toggle fullscreen |
+| `H` | Hide or show the interface |
 
 The UI uses native controls, visible focus states, live status announcements, pressed-state semantics, and descriptive canvas text. If the operating system requests reduced motion, Starforge opens on a paused frame and waits for explicit playback.
+
+## Live telemetry
+
+The meter cluster reports what the engine and renderer are actually doing:
+
+| Meter | Source |
+| --- | --- |
+| FPS | Smoothed frame rate of the animation loop |
+| Flux | `flux()` — mean per-pixel exposure of the frame just rendered, as a percentage of the engine's exposure clamp |
+| Frame | GPU upload + draw time for the last presented frame |
+| Backend | `WebGL2`, or `Canvas2D` where WebGL2 is unavailable |
+| Drive | Playback state |
+
+Flux is read back from the Rust engine rather than derived in JavaScript, so it
+responds to mode, seed, and pointer gravity as well as the intensity control.
+
+Rendering prefers a WebGL2 texture blit and transparently falls back to
+`putImageData` on a 2D context; the Backend meter shows which path is live.
 
 ## Shareable URL state
 
@@ -86,7 +106,7 @@ Run the native Rust checks independently:
 ```bash
 cargo fmt --check
 cargo check --locked
-cargo test --locked
+cargo test --locked   # engine: determinism, clamping, flux telemetry
 cargo check --locked --release --target wasm32-unknown-unknown
 ```
 
@@ -116,6 +136,10 @@ scripts/build-wasm.sh      locked clean-clone Rust-to-WASM build
 scripts/verify-wasm.mjs    browser-free ABI and framebuffer verifier
 web/index.html             semantic instrument structure
 web/src/keyboard.ts        tested interactive-target shortcut guard
+web/src/instrument-state.ts pure share-link model (parse, clamp, serialise)
+web/src/renderer.ts        WebGL2 renderer with a Canvas2D fallback
+web/src/effects.ts         spotlight cards and hide-UI chrome
+web/src/__tests__/         Vitest unit tests
 web/src/main.ts            playback, URL state, export, input and accessibility runtime
 web/src/styles.css         responsive cockpit presentation
 .github/workflows/ci.yml   Rust, Node, audit and production-build checks

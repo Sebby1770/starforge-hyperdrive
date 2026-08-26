@@ -37,17 +37,35 @@
           </div>
           <div class="meter">
             <span>Flux</span>
-            <strong id="flux">76%</strong>
+            <strong id="flux">—</strong>
+          </div>
+          <div class="meter">
+            <span>Frame</span>
+            <strong id="render-ms">—</strong>
+          </div>
+          <div class="meter">
+            <span>Backend</span>
+            <strong id="backend">—</strong>
           </div>
           <div class="meter meter-wide">
             <span>Drive</span>
             <strong id="motion-state">Loading</strong>
           </div>
         </div>
+
+        <button
+          id="hide-ui"
+          class="chrome-toggle"
+          type="button"
+          aria-pressed="false"
+          title="Hide the controls for a clean capture (H)"
+        >
+          Hide UI <kbd>H</kbd>
+        </button>
       </header>
 
       <section class="control-dock" aria-label="Starforge instrument controls">
-        <div class="control-group mode-panel">
+        <div class="control-group mode-panel spotlight-card">
           <div class="group-heading">
             <span>Field mode</span>
             <kbd>1–4</kbd>
@@ -68,7 +86,7 @@
           </div>
         </div>
 
-        <div class="control-group tuning-panel">
+        <div class="control-group tuning-panel spotlight-card">
           <label class="slider-wrap" for="intensity">
             <span>Intensity <output id="intensity-output" for="intensity">76%</output></span>
             <input
@@ -92,7 +110,7 @@
           </button>
         </div>
 
-        <div class="control-group command-grid" aria-label="Playback and sharing commands">
+        <div class="control-group command-grid spotlight-card" aria-label="Playback and sharing commands">
           <button id="playback" class="command-button" type="button" title="Play or pause animation (Space)">
             <span id="playback-label">Pause</span> <kbd>Space</kbd>
           </button>

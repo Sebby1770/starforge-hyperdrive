@@ -13,6 +13,7 @@ const requiredFunctions = [
   "height",
   "framebuffer_ptr",
   "render",
+  "flux",
   "set_pointer",
   "set_mode",
   "set_intensity",
@@ -165,11 +166,41 @@ if (lowClamp.checksum !== explicitLowClamp.checksum) {
   throw new Error("Intensity lower-bound clamping is inconsistent.");
 }
 
+// Flux is live telemetry the control surface renders as a meter, so the ABI
+// check has to prove it is a real readback of the last frame rather than a
+// constant: it must stay inside the exposure clamp and follow intensity.
+engine.set_mode(0);
+engine.reseed(1770);
+
+engine.set_intensity(0.15);
+engine.render(900);
+const dimFlux = engine.flux();
+
+engine.set_intensity(1.35);
+engine.render(900);
+const brightFlux = engine.flux();
+
+for (const [label, value] of [
+  ["dim", dimFlux],
+  ["bright", brightFlux]
+]) {
+  if (!Number.isFinite(value) || value < 0 || value > 1.6) {
+    throw new Error(`Flux telemetry (${label}) left the exposure range: ${value}`);
+  }
+}
+
+if (!(brightFlux > dimFlux)) {
+  throw new Error(
+    `Flux telemetry does not track intensity (dim=${dimFlux}, bright=${brightFlux}).`
+  );
+}
+
 console.log(
   `Verified ${width}x${height} WASM ABI and renderer: ` +
     `${Math.round(baseline.coverage * 100)}% lit, ` +
     `${Math.round(modeDifference * 100)}% mode delta, ` +
     `${Math.round(seedDifference * 100)}% seed delta, ` +
     `${Math.round(adjacentHighSeedDifference * 100)}% adjacent-u32 delta, ` +
-    `checksum ${baseline.checksum}.`
+    `checksum ${baseline.checksum}, ` +
+    `flux ${dimFlux.toFixed(3)}->${brightFlux.toFixed(3)}.`
 );

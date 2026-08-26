@@ -29,6 +29,7 @@ const DEFAULT_STATE: RenderState = RenderState {
 
 static mut FRAMEBUFFER: [u8; BUFFER_LEN] = [0; BUFFER_LEN];
 static mut STATE: RenderState = DEFAULT_STATE;
+static mut FLUX: f32 = 0.0;
 
 #[cfg(target_arch = "wasm32")]
 #[panic_handler]
@@ -88,10 +89,24 @@ pub extern "C" fn render(elapsed_ms: f32) {
         core::slice::from_raw_parts_mut(core::ptr::addr_of_mut!(FRAMEBUFFER) as *mut u8, BUFFER_LEN)
     };
 
-    render_frame(framebuffer, elapsed_ms, state);
+    let flux = render_frame(framebuffer, elapsed_ms, state);
+
+    unsafe {
+        FLUX = flux;
+    }
 }
 
-fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) {
+/// Mean per-pixel exposure of the most recent frame, in the range 0.0..=1.6.
+///
+/// The control surface reads this as live telemetry, so it is derived from the
+/// same exposure term the renderer writes into the framebuffer rather than
+/// being re-estimated on the JavaScript side.
+#[unsafe(no_mangle)]
+pub extern "C" fn flux() -> f32 {
+    unsafe { FLUX }
+}
+
+fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> f32 {
     let time = elapsed_ms * 0.001;
     let RenderState {
         pointer_x,
@@ -104,6 +119,7 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) {
     let (seed_x, seed_y) = seed_components(seed);
 
     let aspect = WIDTH as f32 / HEIGHT as f32;
+    let mut flux_total = 0.0_f32;
 
     for y in 0..HEIGHT {
         let ny = ((y as f32 / HEIGHT as f32) - 0.5) * 2.0;
@@ -182,6 +198,8 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) {
             g = tonemap(g * exposure + spark * 0.85 + cursor_bloom * 0.36);
             b = tonemap(b * exposure + spark * 1.0 + cursor_bloom * 0.46);
 
+            flux_total += exposure;
+
             let idx = (y * WIDTH + x) * CHANNELS;
             framebuffer[idx] = to_byte(r);
             framebuffer[idx + 1] = to_byte(g);
@@ -189,6 +207,8 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) {
             framebuffer[idx + 3] = 255;
         }
     }
+
+    flux_total / (WIDTH * HEIGHT) as f32
 }
 
 fn palette(mode: u32, t: f32) -> (f32, f32, f32) {
@@ -327,6 +347,11 @@ mod tests {
         frame
     }
 
+    fn flux_for(state: RenderState, elapsed_ms: f32) -> f32 {
+        let mut frame = vec![0; BUFFER_LEN];
+        render_frame(&mut frame, elapsed_ms, state)
+    }
+
     fn checksum(frame: &[u8]) -> u64 {
         frame.iter().enumerate().fold(0_u64, |sum, (index, value)| {
             sum.wrapping_add((*value as u64) * (index as u64 + 17))
@@ -455,5 +480,59 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn flux_is_a_bounded_mean_exposure() {
+        let flux = flux_for(DEFAULT_STATE, 1200.0);
+
+        assert!(flux.is_finite(), "flux must be finite, got {flux}");
+        assert!(
+            (0.0..=1.6).contains(&flux),
+            "flux must stay inside the exposure clamp, got {flux}"
+        );
+        assert!(flux > 0.0, "a lit frame must report non-zero flux");
+    }
+
+    #[test]
+    fn flux_tracks_intensity() {
+        let dim = flux_for(
+            RenderState {
+                intensity: 0.2,
+                ..DEFAULT_STATE
+            },
+            900.0,
+        );
+        let bright = flux_for(
+            RenderState {
+                intensity: 1.3,
+                ..DEFAULT_STATE
+            },
+            900.0,
+        );
+
+        assert!(
+            bright > dim,
+            "raising intensity must raise reported flux ({bright} !> {dim})"
+        );
+    }
+
+    #[test]
+    fn flux_export_reflects_the_last_rendered_frame() {
+        unsafe {
+            STATE = DEFAULT_STATE;
+        }
+        set_intensity(0.2);
+        render(900.0);
+        let dim = flux();
+
+        set_intensity(1.3);
+        render(900.0);
+        let bright = flux();
+
+        assert!(dim > 0.0 && bright > 0.0);
+        assert!(
+            bright > dim,
+            "the exported flux must follow engine state ({bright} !> {dim})"
+        );
     }
 }

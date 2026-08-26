@@ -1,5 +1,19 @@
 import "./styles.css";
 import { isInteractiveShortcutTarget } from "./keyboard";
+import { initSpotlightCards, initUiChrome } from "./effects";
+import { createRenderer, type RenderMetrics } from "./renderer";
+import {
+  DEFAULT_STATE,
+  MAX_INTENSITY,
+  MAX_SEED,
+  MIN_INTENSITY,
+  MODES,
+  boundedInteger,
+  instrumentSearchParams,
+  normaliseState,
+  parseInstrumentState,
+  type InstrumentState
+} from "./instrument-state";
 
 type StarforgeExports = {
   memory: WebAssembly.Memory;
@@ -7,16 +21,11 @@ type StarforgeExports = {
   height: () => number;
   framebuffer_ptr: () => number;
   render: (elapsedMs: number) => void;
+  flux: () => number;
   set_pointer: (x: number, y: number, down: number) => void;
   set_mode: (mode: number) => void;
   set_intensity: (value: number) => void;
   reseed: (value: number) => void;
-};
-
-type InstrumentState = {
-  mode: number;
-  intensity: number;
-  seed: number;
 };
 
 type StateUpdateOptions = {
@@ -24,15 +33,6 @@ type StateUpdateOptions = {
   syncUrl?: boolean;
 };
 
-const MODES = ["Aurora", "Solar", "Circuit", "Tunnel"] as const;
-const DEFAULT_STATE: InstrumentState = {
-  mode: 0,
-  intensity: 76,
-  seed: 1770
-};
-const MIN_INTENSITY = 15;
-const MAX_INTENSITY = 135;
-const MAX_SEED = 4_294_967_295;
 const TARGET_FRAME_MS = 1000 / 45;
 const EXPORT_SCALE = 4;
 
@@ -40,6 +40,8 @@ const app = requiredElement<HTMLElement>("#app");
 const canvas = requiredElement<HTMLCanvasElement>("#starfield");
 const fpsDisplay = requiredElement<HTMLElement>("#fps");
 const fluxDisplay = requiredElement<HTMLElement>("#flux");
+const renderDisplay = requiredElement<HTMLElement>("#render-ms");
+const backendDisplay = requiredElement<HTMLElement>("#backend");
 const motionDisplay = requiredElement<HTMLElement>("#motion-state");
 const statusDisplay = requiredElement<HTMLElement>("#status");
 const intensityInput = requiredElement<HTMLInputElement>("#intensity");
@@ -55,17 +57,21 @@ const fullscreenLabel = requiredElement<HTMLElement>("#fullscreen-label");
 const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".mode-button"));
 const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-const context = canvas.getContext("2d", {
-  alpha: false,
-  desynchronized: true
-});
+let renderer: ReturnType<typeof createRenderer>;
 
-if (!context) {
-  showFatalError("This browser cannot create the 2D canvas needed by Starforge.");
-  throw new Error("2D canvas is unavailable.");
+try {
+  renderer = createRenderer(canvas);
+} catch (error) {
+  showFatalError("This browser cannot create the WebGL or 2D canvas Starforge needs.");
+  throw error;
 }
 
-const renderContext = context;
+const activeRenderer = renderer;
+let lastMetrics: RenderMetrics = {
+  backend: activeRenderer.backend,
+  uploadMs: 0,
+  drawMs: 0
+};
 
 let instrumentState = readUrlState();
 let isPlaying = !reducedMotionQuery.matches;
@@ -93,17 +99,19 @@ const height = wasm.height();
 const bufferSize = width * height * 4;
 validateFramebufferContract(wasm, width, height, bufferSize);
 
-canvas.width = width;
-canvas.height = height;
-renderContext.imageSmoothingEnabled = true;
+activeRenderer.resize(width, height);
+backendDisplay.textContent = activeRenderer.backend === "webgl" ? "WebGL2" : "Canvas2D";
 
 let framebuffer = readFramebuffer(wasm, bufferSize);
-let imageData = new ImageData(framebuffer, width, height);
+
+initUiChrome();
+initSpotlightCards();
 
 applyEngineState();
 writeUrlState();
 fitCanvas();
 paintFrame();
+updateTelemetry();
 syncPlaybackUi();
 syncFullscreenUi();
 app.setAttribute("aria-busy", "false");
@@ -222,6 +230,7 @@ async function loadWasm(): Promise<StarforgeExports> {
     "height",
     "framebuffer_ptr",
     "render",
+    "flux",
     "set_pointer",
     "set_mode",
     "set_intensity",
@@ -285,6 +294,7 @@ function frame(now: number) {
 
     if (now - lastMeterUpdate > 250) {
       fpsDisplay.textContent = String(Math.round(fpsAverage));
+      updateTelemetry();
       lastMeterUpdate = now;
     }
   }
@@ -304,17 +314,32 @@ function startAnimation() {
 function paintFrame() {
   wasm.render(simulationTime);
 
+  // WebAssembly.Memory.grow() detaches the old ArrayBuffer, so the view has to
+  // be rebuilt whenever the engine has moved its heap underneath us.
   if (framebuffer.buffer !== wasm.memory.buffer) {
     framebuffer = readFramebuffer(wasm, bufferSize);
-    imageData = new ImageData(framebuffer, width, height);
   }
 
-  renderContext.putImageData(imageData, 0, 0);
+  lastMetrics = activeRenderer.draw(framebuffer, width, height);
+}
+
+/**
+ * Mirrors engine + renderer telemetry into the meter cluster.
+ *
+ * Flux is read back from the Rust engine (mean per-pixel exposure of the frame
+ * that was just drawn) rather than echoing the intensity slider, so it responds
+ * to mode, seed, and pointer gravity as well as exposure.
+ */
+function updateTelemetry() {
+  const flux = wasm.flux();
+  fluxDisplay.textContent = Number.isFinite(flux) ? `${Math.round((flux / 1.6) * 100)}%` : "—";
+  renderDisplay.textContent = `${(lastMetrics.uploadMs + lastMetrics.drawMs).toFixed(2)} ms`;
 }
 
 function paintFrameIfPaused() {
   if (!isPlaying) {
     paintFrame();
+    updateTelemetry();
   }
 }
 
@@ -329,6 +354,7 @@ function updateInstrumentState(nextState: InstrumentState, options: StateUpdateO
   applyEngineState();
   syncControls();
   paintFrame();
+  updateTelemetry();
 
   if (options.syncUrl !== false) {
     writeUrlState();
@@ -339,57 +365,17 @@ function updateInstrumentState(nextState: InstrumentState, options: StateUpdateO
   }
 }
 
-function normaliseState(state: InstrumentState): InstrumentState {
-  return {
-    mode: Number.isInteger(state.mode) && state.mode >= 0 && state.mode < MODES.length ? state.mode : 0,
-    intensity: boundedInteger(
-      String(state.intensity),
-      MIN_INTENSITY,
-      MAX_INTENSITY,
-      DEFAULT_STATE.intensity
-    ),
-    seed: boundedInteger(String(state.seed), 0, MAX_SEED, DEFAULT_STATE.seed)
-  };
-}
 
 function readUrlState(): InstrumentState {
-  const params = new URLSearchParams(window.location.search);
-  const requestedMode = params.get("mode")?.toLowerCase();
-  const modeIndex = MODES.findIndex((mode) => mode.toLowerCase() === requestedMode);
-
-  return normaliseState({
-    mode: modeIndex === -1 ? DEFAULT_STATE.mode : modeIndex,
-    intensity: boundedInteger(
-      params.get("intensity"),
-      MIN_INTENSITY,
-      MAX_INTENSITY,
-      DEFAULT_STATE.intensity
-    ),
-    seed: boundedInteger(params.get("seed"), 0, MAX_SEED, DEFAULT_STATE.seed)
-  });
+  return parseInstrumentState(window.location.search);
 }
 
-function boundedInteger(raw: string | null, minimum: number, maximum: number, fallback: number) {
-  if (raw === null || raw.trim() === "") {
-    return fallback;
-  }
-
-  const parsed = Number(raw);
-
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-
-  return Math.min(maximum, Math.max(minimum, Math.round(parsed)));
-}
 
 function stateUrl() {
   const url = new URL(window.location.href);
   url.search = "";
   url.hash = "";
-  url.searchParams.set("mode", MODES[instrumentState.mode].toLowerCase());
-  url.searchParams.set("intensity", String(instrumentState.intensity));
-  url.searchParams.set("seed", String(instrumentState.seed));
+  url.search = instrumentSearchParams(instrumentState).toString();
   return url;
 }
 
@@ -401,7 +387,6 @@ function writeUrlState() {
 function syncControls() {
   intensityInput.value = String(instrumentState.intensity);
   intensityOutput.value = `${instrumentState.intensity}%`;
-  fluxDisplay.textContent = `${instrumentState.intensity}%`;
   intensityInput.setAttribute("aria-valuetext", `${instrumentState.intensity} percent`);
   seedInput.value = String(instrumentState.seed);
   canvas.setAttribute(

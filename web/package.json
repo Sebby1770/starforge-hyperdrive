@@ -1,19 +1,23 @@
 {
   "name": "starforge-hyperdrive-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build:wasm": "../scripts/build-wasm.sh",
     "dev": "npm run build:wasm && vite --host 127.0.0.1",
+    "dev:vite": "vite --host 127.0.0.1",
     "build": "npm run build:wasm && tsc --noEmit && vite build",
     "verify:wasm": "node ../scripts/verify-wasm.mjs",
     "verify:keyboard": "node ../scripts/verify-keyboard.mjs",
-    "test": "npm run build && npm run verify:wasm && npm run verify:keyboard",
-    "preview": "vite preview --host 127.0.0.1"
+    "test": "npm run build && npm run test:unit && npm run verify:wasm && npm run verify:keyboard",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:unit": "vitest run"
   },
   "devDependencies": {
+    "jsdom": "^25.0.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6"
+    "vite": "^7.3.6",
+    "vitest": "^3.2.7"
   }
 }
