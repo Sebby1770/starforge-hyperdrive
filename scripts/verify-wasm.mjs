@@ -11,6 +11,10 @@ const engine = instance.exports;
 const requiredFunctions = [
   "width",
   "height",
+  "max_width",
+  "max_height",
+  "mode_count",
+  "set_resolution",
   "framebuffer_ptr",
   "render",
   "flux",
@@ -30,6 +34,67 @@ if (!(engine.memory instanceof WebAssembly.Memory)) {
   throw new Error("Missing WASM memory export.");
 }
 
+const MIN_SCALE = 2;
+const MAX_SCALE = 8;
+const TILE_WIDTH = 160;
+const TILE_HEIGHT = 98;
+const MODE_COUNT = 8;
+
+if (engine.mode_count() !== MODE_COUNT) {
+  throw new Error(`Engine reports ${engine.mode_count()} modes, expected ${MODE_COUNT}.`);
+}
+
+if (engine.max_width() !== TILE_WIDTH * MAX_SCALE || engine.max_height() !== TILE_HEIGHT * MAX_SCALE) {
+  throw new Error(
+    `Unexpected maximum resolution: ${engine.max_width()}x${engine.max_height()}`
+  );
+}
+
+// The scale ladder is the contract the adaptive controller and the PNG exporter
+// both rely on, so walk every rung and prove the engine reports back exactly the
+// geometry the control surface will allocate views against.
+for (let scale = MIN_SCALE; scale <= MAX_SCALE; scale += 1) {
+  const applied = engine.set_resolution(scale);
+
+  if (applied !== scale) {
+    throw new Error(`set_resolution(${scale}) reported ${applied}.`);
+  }
+
+  const tierWidth = engine.width();
+  const tierHeight = engine.height();
+
+  if (tierWidth !== TILE_WIDTH * scale || tierHeight !== TILE_HEIGHT * scale) {
+    throw new Error(`Scale ${scale} produced ${tierWidth}x${tierHeight}.`);
+  }
+
+  const tierPointer = engine.framebuffer_ptr();
+  const tierLength = tierWidth * tierHeight * 4;
+
+  if (tierPointer < 0 || tierPointer + tierLength > engine.memory.buffer.byteLength) {
+    throw new Error(`Scale ${scale} framebuffer points outside WASM memory.`);
+  }
+
+  // Every tier must render a complete, opaque frame — a partially written
+  // buffer would surface as torn edges only at that one quality setting.
+  engine.set_mode(0);
+  engine.set_intensity(0.9);
+  engine.reseed(1770);
+  engine.render(1500);
+  const tierFrame = new Uint8Array(engine.memory.buffer, tierPointer, tierLength);
+
+  for (let index = 3; index < tierFrame.length; index += 4) {
+    if (tierFrame[index] !== 255) {
+      throw new Error(`Scale ${scale} left byte ${index} non-opaque.`);
+    }
+  }
+}
+
+if (engine.set_resolution(0) !== MIN_SCALE || engine.set_resolution(9999) !== MAX_SCALE) {
+  throw new Error("set_resolution does not clamp out-of-range scales.");
+}
+
+// Run the renderer checks below at the default preview tier.
+engine.set_resolution(MIN_SCALE);
 const width = engine.width();
 const height = engine.height();
 const framebufferPointer = engine.framebuffer_ptr();
@@ -119,8 +184,8 @@ const baseline = renderScenario(baselineInput);
 const repeated = renderScenario(baselineInput);
 const alternateMode = renderScenario({ ...baselineInput, mode: 3 });
 const alternateSeed = renderScenario({ ...baselineInput, seed: 42042 });
-const wrappedMode = renderScenario({ ...baselineInput, mode: 99 });
-const explicitWrappedMode = renderScenario({ ...baselineInput, mode: 3 });
+const wrappedMode = renderScenario({ ...baselineInput, mode: MODE_COUNT + 2 });
+const explicitWrappedMode = renderScenario({ ...baselineInput, mode: 2 });
 const lowClamp = renderScenario({ ...baselineInput, intensity: -100 });
 const explicitLowClamp = renderScenario({ ...baselineInput, intensity: 0.15 });
 const penultimateSeed = renderScenario({ ...baselineInput, seed: 4_294_967_294 });
@@ -152,6 +217,30 @@ if (modeDifference < 0.25 || seedDifference < 0.25 || adjacentHighSeedDifference
       `seed=${seedDifference.toFixed(3)} ` +
       `adjacent-high-seed=${adjacentHighSeedDifference.toFixed(3)}`
   );
+}
+
+// Each palette/field pairing is a separate code path; a mode that silently
+// aliased another would still pass a two-mode comparison.
+const modeFrames = [];
+
+for (let mode = 0; mode < MODE_COUNT; mode += 1) {
+  const rendered = renderScenario({ ...baselineInput, mode });
+
+  if (rendered.coverage < 0.1) {
+    throw new Error(`Mode ${mode} rendered an unlit frame (coverage ${rendered.coverage}).`);
+  }
+
+  modeFrames.push(rendered);
+}
+
+for (let left = 0; left < MODE_COUNT; left += 1) {
+  for (let right = left + 1; right < MODE_COUNT; right += 1) {
+    const delta = differenceRatio(modeFrames[left].frame, modeFrames[right].frame);
+
+    if (delta < 0.2) {
+      throw new Error(`Modes ${left} and ${right} differ on only ${(delta * 100).toFixed(1)}% of pixels.`);
+    }
+  }
 }
 
 if (ultimateSeed.checksum !== repeatedUltimateSeed.checksum) {
@@ -196,7 +285,9 @@ if (!(brightFlux > dimFlux)) {
 }
 
 console.log(
-  `Verified ${width}x${height} WASM ABI and renderer: ` +
+  `Verified WASM ABI across scales ${MIN_SCALE}-${MAX_SCALE} ` +
+    `(up to ${engine.max_width()}x${engine.max_height()}), ` +
+    `${MODE_COUNT} distinct modes, and the ${width}x${height} renderer: ` +
     `${Math.round(baseline.coverage * 100)}% lit, ` +
     `${Math.round(modeDifference * 100)}% mode delta, ` +
     `${Math.round(seedDifference * 100)}% seed delta, ` +

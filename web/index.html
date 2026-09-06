@@ -5,7 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Starforge Hyperdrive is a Rust and WebAssembly visual playground with TypeScript controls."
+      content="Starforge Hyperdrive is a Rust and WebAssembly generative-light instrument with a TypeScript control surface. Eight field modes, native high-resolution PNG export, and shareable URLs."
+    />
+    <meta name="theme-color" content="#05070f" />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Starforge Hyperdrive" />
+    <meta
+      property="og:description"
+      content="A deterministic Rust + WebAssembly light synthesizer. Eight field modes, native 1280x784 PNG export, and shareable URLs."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2305070f'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%236ee7ff' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23f0abfc'/%3E%3C/svg%3E"
     />
     <title>Starforge Hyperdrive</title>
   </head>
@@ -48,6 +61,10 @@
             <strong id="backend">—</strong>
           </div>
           <div class="meter meter-wide">
+            <span>Render</span>
+            <strong id="resolution">—</strong>
+          </div>
+          <div class="meter meter-wide">
             <span>Drive</span>
             <strong id="motion-state">Loading</strong>
           </div>
@@ -68,7 +85,7 @@
         <div class="control-group mode-panel spotlight-card">
           <div class="group-heading">
             <span>Field mode</span>
-            <kbd>1–4</kbd>
+            <kbd>1–8</kbd>
           </div>
           <div class="mode-grid" role="group" aria-label="Visual modes">
             <button class="mode-button active" type="button" data-mode="0" aria-pressed="true">
@@ -82,6 +99,18 @@
             </button>
             <button class="mode-button" type="button" data-mode="3" aria-pressed="false">
               <span>04</span>Tunnel
+            </button>
+            <button class="mode-button" type="button" data-mode="4" aria-pressed="false">
+              <span>05</span>Nebula
+            </button>
+            <button class="mode-button" type="button" data-mode="5" aria-pressed="false">
+              <span>06</span>Lattice
+            </button>
+            <button class="mode-button" type="button" data-mode="6" aria-pressed="false">
+              <span>07</span>Prism
+            </button>
+            <button class="mode-button" type="button" data-mode="7" aria-pressed="false">
+              <span>08</span>Vortex
             </button>
           </div>
         </div>
@@ -100,6 +129,34 @@
           </label>
           <span id="intensity-hint" class="sr-only">Adjust the light field intensity from 15 to 135 percent.</span>
 
+          <label class="slider-wrap" for="speed">
+            <span>Speed <output id="speed-output" for="speed">100%</output></span>
+            <input
+              id="speed"
+              min="0"
+              max="300"
+              value="100"
+              type="range"
+              aria-describedby="speed-hint"
+            />
+          </label>
+          <span id="speed-hint" class="sr-only">Adjust how fast the field evolves, from frozen at 0 percent to 300 percent.</span>
+
+          <label class="select-wrap" for="quality">
+            <span>Render quality</span>
+            <select id="quality" aria-describedby="quality-hint">
+              <option value="auto">Auto</option>
+              <option value="draft">Draft — 320×196</option>
+              <option value="standard">Standard — 480×294</option>
+              <option value="high">High — 640×392</option>
+              <option value="ultra">Ultra — 960×588</option>
+            </select>
+          </label>
+          <span id="quality-hint" class="sr-only">
+            Auto follows measured frame time. PNG export always renders natively at 1280 by 784
+            regardless of this setting.
+          </span>
+
           <label class="seed-wrap" for="seed">
             <span>System seed</span>
             <input id="seed" min="0" max="4294967295" inputmode="numeric" type="number" />
@@ -110,6 +167,22 @@
           </button>
         </div>
 
+        <div class="control-group preset-panel spotlight-card">
+          <div class="group-heading">
+            <span>Presets</span>
+          </div>
+          <div class="preset-grid" role="group" aria-label="Curated compositions">
+            <button class="preset-button" type="button" data-preset="deep-field">Deep Field</button>
+            <button class="preset-button" type="button" data-preset="coronal">Coronal</button>
+            <button class="preset-button" type="button" data-preset="mainboard">Mainboard</button>
+            <button class="preset-button" type="button" data-preset="descent">Descent</button>
+            <button class="preset-button" type="button" data-preset="ion-drift">Ion Drift</button>
+            <button class="preset-button" type="button" data-preset="weave">Weave</button>
+            <button class="preset-button" type="button" data-preset="refraction">Refraction</button>
+            <button class="preset-button" type="button" data-preset="maelstrom">Maelstrom</button>
+          </div>
+        </div>
+
         <div class="control-group command-grid spotlight-card" aria-label="Playback and sharing commands">
           <button id="playback" class="command-button" type="button" title="Play or pause animation (Space)">
             <span id="playback-label">Pause</span> <kbd>Space</kbd>
@@ -117,7 +190,7 @@
           <button id="copy-link" class="command-button" type="button" title="Copy a link to this instrument state (C)">
             Copy link <kbd>C</kbd>
           </button>
-          <button id="export-png" class="command-button" type="button" title="Export a high-resolution PNG (E)">
+          <button id="export-png" class="command-button" type="button" title="Export a natively rendered 1280x784 PNG (E)">
             Export PNG <kbd>E</kbd>
           </button>
           <button id="fullscreen" class="command-button" type="button" title="Toggle fullscreen (F)">

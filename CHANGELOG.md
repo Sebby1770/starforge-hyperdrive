@@ -38,6 +38,62 @@ All notable changes to **starforge-hyperdrive** are documented here.
   `exactOptionalPropertyTypes`, and `noImplicitOverride`.
 - CI runs `cargo clippy -D warnings`, a type-check, and the Vitest suite.
 
+
+## 0.3.0 - 2026-09-07
+
+### Added
+
+- Runtime-selectable render resolution. The engine renders into a statically
+  sized framebuffer at any whole multiple of a 160 x 98 tile from 320 x 196 up
+  to 1280 x 784, exposed as `set_resolution`, `max_width`, and `max_height`.
+- Adaptive quality. With `Auto` selected, the control surface measures engine
+  frame cost and climbs the tier ladder only when the next rung is projected to
+  fit the budget, so it settles instead of oscillating and never opens on a
+  quality it has to drop a second later.
+- Held frames render at a higher tier. Pausing removes the frame budget, so a
+  paused composition is re-rendered at 640 x 392 even when playback was running
+  at 320 x 196.
+- Four new field modes and palettes: Nebula, Lattice, Prism, and Vortex, taking
+  the instrument to eight. `mode_count` is exported so the control surface fails
+  loudly rather than silently disagreeing with the engine.
+- A speed control (0-300%) and a render-quality selector, both carried in the
+  share link as `speed` and `quality`.
+- Eight curated presets.
+- A live demo, deployed to GitHub Pages on every push to `main`.
+- `src/fastmath.rs`: error-bounded `sin`, `cos`, and `exp` approximations, each
+  pinned against `std` by a test.
+
+### Changed
+
+- **PNG export is now a native render rather than an upscale.** Earlier releases
+  drew the 320 x 196 preview canvas into a 1280 x 784 buffer with bilinear
+  smoothing and called the result high-resolution. The engine is now retargeted
+  to 1280 x 784 and renders the composition again, so the saved file carries
+  detail the preview never had. The preview tier is restored afterwards, and
+  also on failure.
+- The engine is roughly 2.1x faster: 328 ns/pixel to 153 ns/pixel on the shipped
+  wasm build, or 20.6 ms to 9.6 ms for a 320 x 196 frame. Per-frame and
+  per-octave trigonometry that was being recomputed for every pixel is hoisted
+  out of the loop, and the transcendental calls now go through `fastmath`.
+- The Frame meter reports engine time as well as GPU upload and draw, so it
+  matches the number the adaptive controller acts on.
+- Keyboard mode selection covers `1`-`8`.
+
+### Fixed
+
+- The `H` (hide UI) shortcut bypassed the interactive-target guard that every
+  other shortcut respects: it checked only for a text input, so it fired while a
+  button or slider held focus, contradicting the documented shortcut contract
+  and stealing the key from the focused control. It now shares the same guard,
+  with a regression test.
+- The Rust test suite raced itself. Several tests drive the exported ABI, which
+  reads and writes process-wide statics, while the default runner executes them
+  in parallel. Those tests now serialise on a shared lock.
+
+### Removed
+
+- Nothing. Share links minted before this release still open unchanged; `speed`
+  and `quality` fall back to their defaults.
 ## [0.2.0] - 2026-07-04
 
 ### Added

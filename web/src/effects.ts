@@ -1,5 +1,7 @@
 /** React Bits–inspired vanilla effects: spotlight cards, aurora, border glow. */
 
+import { isInteractiveShortcutTarget } from "./keyboard";
+
 export function initSpotlightCards(root: ParentNode = document) {
   const cards = Array.from(root.querySelectorAll<HTMLElement>(".spotlight-card"));
 
@@ -45,13 +47,26 @@ export function initUiChrome() {
   hideButton.addEventListener("click", toggle);
 
   const handleKey = (event: KeyboardEvent) => {
-    if (event.key === "h" || event.key === "H") {
-      if (event.target instanceof HTMLInputElement) {
-        return;
-      }
-      toggle();
-      event.preventDefault();
+    if (event.key !== "h" && event.key !== "H") {
+      return;
     }
+
+    // Hide-UI is a global shortcut like every other one, so it has to yield to
+    // native activation in exactly the same cases. Checking only for a text
+    // input let `H` fire while a button or slider held focus, which contradicted
+    // the documented shortcut contract and stole the key from the control.
+    if (
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      isInteractiveShortcutTarget(event.target) ||
+      isInteractiveShortcutTarget(document.activeElement)
+    ) {
+      return;
+    }
+
+    toggle();
+    event.preventDefault();
   };
 
   window.addEventListener("keydown", handleKey);

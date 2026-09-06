@@ -206,6 +206,7 @@ h1 {
 .meter span,
 .group-heading,
 .slider-wrap > span,
+.select-wrap > span,
 .seed-wrap > span {
   display: block;
   color: var(--muted);
@@ -265,11 +266,18 @@ kbd {
 
 .mode-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(72px, 1fr));
+  grid-template-columns: repeat(4, minmax(66px, 1fr));
+  gap: 6px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
 .mode-button,
+.preset-button,
 .command-button {
   min-height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -300,6 +308,12 @@ kbd {
   letter-spacing: 0.12em;
 }
 
+.preset-button:hover {
+  border-color: rgba(110, 231, 255, 0.5);
+  background: rgba(110, 231, 255, 0.12);
+  transform: translateY(-1px);
+}
+
 .mode-button:hover,
 .command-button:hover:not(:disabled) {
   transform: translateY(-1px);
@@ -328,10 +342,37 @@ kbd {
 }
 
 .slider-wrap,
+.select-wrap,
 .seed-wrap {
   display: grid;
   min-width: 0;
   gap: 8px;
+}
+
+.preset-button {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.select-wrap select {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.065);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.select-wrap select option {
+  color: #0b1020;
+  background: #dfe7ff;
 }
 
 .slider-wrap > span {
@@ -399,7 +440,9 @@ input[type="number"]:focus {
 }
 
 .mode-button:focus-visible,
+.preset-button:focus-visible,
 .command-button:focus-visible,
+select:focus-visible,
 input:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
@@ -540,7 +583,8 @@ input:focus-visible {
     padding: 7px;
   }
 
-  .mode-grid {
+  .mode-grid,
+  .preset-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

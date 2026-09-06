@@ -4,3 +4,4 @@
 /web/public/starforge_hyperdrive.wasm
 *.log
 .DS_Store
+.claude/
