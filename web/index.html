@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Starforge Hyperdrive is a Rust and WebAssembly generative-light instrument with a TypeScript control surface. Eight field modes, native high-resolution PNG export, and shareable URLs."
+      content="Starforge Hyperdrive is a Rust and WebAssembly generative-light instrument. Twelve field modes, hue, flux-driven audio, native PNG export, and shareable URLs."
     />
     <meta name="theme-color" content="#05070f" />
     <meta name="color-scheme" content="dark" />
@@ -13,7 +13,7 @@
     <meta property="og:title" content="Starforge Hyperdrive" />
     <meta
       property="og:description"
-      content="A deterministic Rust + WebAssembly light synthesizer. Eight field modes, native 1280x784 PNG export, and shareable URLs."
+      content="A deterministic Rust + WebAssembly light synthesizer. Twelve field modes, native 1280x784 PNG export, and shareable URLs."
     />
     <meta name="twitter:card" content="summary_large_image" />
     <link
@@ -85,7 +85,7 @@
         <div class="control-group mode-panel spotlight-card">
           <div class="group-heading">
             <span>Field mode</span>
-            <kbd>1–8</kbd>
+            <kbd>1–0 − =</kbd>
           </div>
           <div class="mode-grid" role="group" aria-label="Visual modes">
             <button class="mode-button active" type="button" data-mode="0" aria-pressed="true">
@@ -111,6 +111,18 @@
             </button>
             <button class="mode-button" type="button" data-mode="7" aria-pressed="false">
               <span>08</span>Vortex
+            </button>
+            <button class="mode-button" type="button" data-mode="8" aria-pressed="false">
+              <span>09</span>Tide
+            </button>
+            <button class="mode-button" type="button" data-mode="9" aria-pressed="false">
+              <span>10</span>Pulsar
+            </button>
+            <button class="mode-button" type="button" data-mode="10" aria-pressed="false">
+              <span>11</span>Forge
+            </button>
+            <button class="mode-button" type="button" data-mode="11" aria-pressed="false">
+              <span>12</span>Eclipse
             </button>
           </div>
         </div>
@@ -152,6 +164,12 @@
               <option value="ultra">Ultra — 960×588</option>
             </select>
           </label>
+          <label class="slider-wrap" for="hue">
+            <span>Hue <output id="hue-output" for="hue">0°</output></span>
+            <input id="hue" min="0" max="360" value="0" type="range" aria-describedby="hue-hint" />
+          </label>
+          <span id="hue-hint" class="sr-only">Rotate the palette from 0 to 360 degrees.</span>
+
           <span id="quality-hint" class="sr-only">
             Auto follows measured frame time. PNG export always renders natively at 1280 by 784
             regardless of this setting.
@@ -180,6 +198,10 @@
             <button class="preset-button" type="button" data-preset="weave">Weave</button>
             <button class="preset-button" type="button" data-preset="refraction">Refraction</button>
             <button class="preset-button" type="button" data-preset="maelstrom">Maelstrom</button>
+            <button class="preset-button" type="button" data-preset="flood">Flood</button>
+            <button class="preset-button" type="button" data-preset="beacon">Beacon</button>
+            <button class="preset-button" type="button" data-preset="crucible">Crucible</button>
+            <button class="preset-button" type="button" data-preset="occultation">Occultation</button>
           </div>
         </div>
 
@@ -195,6 +217,9 @@
           </button>
           <button id="fullscreen" class="command-button" type="button" title="Toggle fullscreen (F)">
             <span id="fullscreen-label">Fullscreen</span> <kbd>F</kbd>
+          </button>
+          <button id="drive-audio" class="command-button" type="button" title="Drive audio from flux (M)" aria-pressed="false">
+            <span id="drive-audio-label">Audio off</span> <kbd>M</kbd>
           </button>
         </div>
       </section>

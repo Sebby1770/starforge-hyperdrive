@@ -6,7 +6,7 @@ Starforge Hyperdrive is a shareable generative-light instrument powered by a Rus
 
 Move across the canvas to bend the field, press to deepen its gravity, tune the system, pause on a composition, and export it as a natively rendered 1280 x 784 PNG. Every mode, intensity, seed, and speed has a canonical URL, so a generated system can be reopened or shared without a backend.
 
-Eight field modes, a resolution ladder that adapts to the machine it is running
+Twelve field modes, a resolution ladder that adapts to the machine it is running
 on, and a shipped engine whose only dependency is `libm`. The web bundle has no
 runtime dependencies at all.
 
@@ -28,11 +28,13 @@ Open the printed local URL. The build helper creates `web/public` automatically 
 
 ## Instrument controls
 
-- **Aurora, Solar, Circuit, Tunnel, Nebula, Lattice, Prism, Vortex:** switch between eight renderer palettes and field equations.
+- **Aurora, Solar, Circuit, Tunnel, Nebula, Lattice, Prism, Vortex, Tide, Pulsar, Forge, Eclipse:** twelve field equations and palettes.
 - **Intensity:** tune field exposure from 15% to 135%.
 - **Speed:** scale how fast the field evolves, from frozen (0%) to 300%.
 - **Render quality:** `Auto`, or pin the engine to Draft, Standard, High, or Ultra.
-- **Presets:** eight curated compositions, one click each.
+- **Presets:** twelve curated compositions, one click each.
+- **Hue:** rotate the palette without changing the field.
+- **Drive audio:** optional tone that follows live flux (`M`).
 - **System seed:** enter any unsigned 32-bit number for a repeatable system.
 - **Randomise:** generate a new seed with the browser cryptography API.
 - **Play / Pause:** animate the field or hold the current composition.
@@ -46,7 +48,8 @@ Keyboard shortcuts work whenever focus is not on a button, link, form field, or 
 
 | Key | Action |
 | --- | --- |
-| `1`–`8` | Select a field mode |
+| `1`–`9`, `0`, `-`, `=` | Select a field mode |
+| `M` | Toggle drive audio |
 | `Space` | Play or pause |
 | `R` | Randomise the seed |
 | `C` | Copy the share link |
@@ -114,7 +117,8 @@ Instrument state is validated and encoded as query parameters:
 ```
 
 - `mode` must be one of `aurora`, `solar`, `circuit`, `tunnel`, `nebula`,
-  `lattice`, `prism`, or `vortex`.
+  `lattice`, `prism`, `vortex`, `tide`, `pulsar`, `forge`, or `eclipse`.
+- `hue` is rounded and clamped to `0`–`360`.
 - `intensity` is rounded and clamped to `15`–`135`.
 - `seed` is rounded and clamped to the unsigned 32-bit range.
 - `speed` is rounded and clamped to `0`–`300`.
@@ -142,7 +146,7 @@ This command performs a clean production build, TypeScript type-check, Rust rele
 - `set_resolution` clamping outside the supported scale range;
 - deterministic output for identical inputs;
 - opaque, nonblank, non-flat frame output;
-- that all eight modes render lit frames and that no two of them alias;
+- that all twelve modes render lit frames and that no two of them alias;
 - material visual changes across modes and seeds;
 - distinct output for adjacent seeds at the top of the unsigned 32-bit range;
 - renderer mode wrapping and intensity clamping.
@@ -186,6 +190,7 @@ scripts/verify-wasm.mjs    browser-free ABI and framebuffer verifier
 web/index.html             semantic instrument structure
 web/src/keyboard.ts        tested interactive-target shortcut guard
 web/src/instrument-state.ts pure share-link model (parse, clamp, serialise)
+web/src/drive-audio.ts     optional flux-driven tone, muted until enabled
 web/src/renderer.ts        WebGL2 renderer with a Canvas2D fallback
 web/src/effects.ts         spotlight cards and hide-UI chrome
 .github/workflows/pages.yml GitHub Pages build and deploy
@@ -197,10 +202,10 @@ web/src/styles.css         responsive cockpit presentation
 
 The WebAssembly boundary remains intentionally small: memory, dimensions,
 maximum dimensions, mode count, resolution selection, framebuffer pointer,
-render, flux readback, pointer input, mode, intensity, and seed. Rendering uses a
-statically sized internal RGBA buffer — allocated for the largest supported tier
-and used as a prefix below it — with no allocator, no dependencies, and no
-network access.
+render, flux readback, pointer input, mode, intensity, hue, and seed. Rendering
+uses a statically sized internal RGBA buffer — allocated for the largest
+supported tier and used as a prefix below it — with no allocator, no
+dependencies, and no network access.
 
 ### Engine performance
 

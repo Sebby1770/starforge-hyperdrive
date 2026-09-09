@@ -15,7 +15,11 @@ export const MODES = [
   "Nebula",
   "Lattice",
   "Prism",
-  "Vortex"
+  "Vortex",
+  "Tide",
+  "Pulsar",
+  "Forge",
+  "Eclipse"
 ] as const;
 
 export type ModeName = (typeof MODES)[number];
@@ -53,6 +57,7 @@ export type InstrumentState = {
   intensity: number;
   seed: number;
   speed: number;
+  hue: number;
   quality: QualityTier;
 };
 
@@ -61,12 +66,15 @@ export const MAX_INTENSITY = 135;
 export const MAX_SEED = 4_294_967_295;
 export const MIN_SPEED = 0;
 export const MAX_SPEED = 300;
+export const MIN_HUE = 0;
+export const MAX_HUE = 360;
 
 export const DEFAULT_STATE: InstrumentState = {
   mode: 0,
   intensity: 76,
   seed: 1770,
   speed: 100,
+  hue: 0,
   quality: "auto"
 };
 
@@ -118,6 +126,7 @@ export function normaliseState(state: InstrumentState): InstrumentState {
     ),
     seed: boundedInteger(String(state.seed), 0, MAX_SEED, DEFAULT_STATE.seed),
     speed: boundedInteger(String(state.speed), MIN_SPEED, MAX_SPEED, DEFAULT_STATE.speed),
+    hue: boundedInteger(String(state.hue), MIN_HUE, MAX_HUE, DEFAULT_STATE.hue),
     quality: normaliseQuality(state.quality)
   };
 }
@@ -138,6 +147,7 @@ export function parseInstrumentState(search: string): InstrumentState {
     ),
     seed: boundedInteger(params.get("seed"), 0, MAX_SEED, DEFAULT_STATE.seed),
     speed: boundedInteger(params.get("speed"), MIN_SPEED, MAX_SPEED, DEFAULT_STATE.speed),
+    hue: boundedInteger(params.get("hue"), MIN_HUE, MAX_HUE, DEFAULT_STATE.hue),
     quality: normaliseQuality(params.get("quality"))
   });
 }
@@ -163,6 +173,10 @@ export function instrumentSearchParams(state: InstrumentState): URLSearchParams 
     params.set("quality", normalised.quality);
   }
 
+  if (normalised.hue !== DEFAULT_STATE.hue) {
+    params.set("hue", String(normalised.hue));
+  }
+
   return params;
 }
 
@@ -176,16 +190,20 @@ export function instrumentSearchParams(state: InstrumentState): URLSearchParams 
 export const PRESETS: ReadonlyArray<{
   id: string;
   name: string;
-  state: Pick<InstrumentState, "mode" | "intensity" | "seed" | "speed">;
+  state: Pick<InstrumentState, "mode" | "intensity" | "seed" | "speed" | "hue">;
 }> = [
-  { id: "deep-field", name: "Deep Field", state: { mode: 0, intensity: 62, seed: 20482, speed: 45 } },
-  { id: "coronal", name: "Coronal", state: { mode: 1, intensity: 118, seed: 907331, speed: 130 } },
-  { id: "mainboard", name: "Mainboard", state: { mode: 2, intensity: 88, seed: 5150, speed: 70 } },
-  { id: "descent", name: "Descent", state: { mode: 3, intensity: 104, seed: 771020, speed: 165 } },
-  { id: "ion-drift", name: "Ion Drift", state: { mode: 4, intensity: 71, seed: 3312887, speed: 35 } },
-  { id: "weave", name: "Weave", state: { mode: 5, intensity: 96, seed: 44117, speed: 85 } },
-  { id: "refraction", name: "Refraction", state: { mode: 6, intensity: 127, seed: 1618033, speed: 110 } },
-  { id: "maelstrom", name: "Maelstrom", state: { mode: 7, intensity: 133, seed: 8675309, speed: 200 } }
+  { id: "deep-field", name: "Deep Field", state: { mode: 0, intensity: 62, seed: 20482, speed: 45, hue: 0 } },
+  { id: "coronal", name: "Coronal", state: { mode: 1, intensity: 118, seed: 907331, speed: 130, hue: 12 } },
+  { id: "mainboard", name: "Mainboard", state: { mode: 2, intensity: 88, seed: 5150, speed: 70, hue: 0 } },
+  { id: "descent", name: "Descent", state: { mode: 3, intensity: 104, seed: 771020, speed: 165, hue: 0 } },
+  { id: "ion-drift", name: "Ion Drift", state: { mode: 4, intensity: 71, seed: 3312887, speed: 35, hue: 40 } },
+  { id: "weave", name: "Weave", state: { mode: 5, intensity: 96, seed: 44117, speed: 85, hue: 0 } },
+  { id: "refraction", name: "Refraction", state: { mode: 6, intensity: 127, seed: 1618033, speed: 110, hue: 0 } },
+  { id: "maelstrom", name: "Maelstrom", state: { mode: 7, intensity: 133, seed: 8675309, speed: 200, hue: 18 } },
+  { id: "flood", name: "Flood", state: { mode: 8, intensity: 92, seed: 424242, speed: 80, hue: 0 } },
+  { id: "beacon", name: "Beacon", state: { mode: 9, intensity: 110, seed: 1201, speed: 150, hue: 200 } },
+  { id: "crucible", name: "Crucible", state: { mode: 10, intensity: 124, seed: 9009, speed: 90, hue: 0 } },
+  { id: "occultation", name: "Occultation", state: { mode: 11, intensity: 108, seed: 314159, speed: 40, hue: 30 } }
 ];
 
 /** Pixel dimensions the engine renders at for a given scale. */

@@ -41,8 +41,8 @@ describe("boundedInteger", () => {
 
 describe("parseInstrumentState", () => {
   it("reads a complete query string", () => {
-    const state = parseInstrumentState("?mode=circuit&intensity=94&seed=1770&speed=150&quality=high");
-    expect(state).toEqual({ mode: 2, intensity: 94, seed: 1770, speed: 150, quality: "high" });
+    const state = parseInstrumentState("?mode=circuit&intensity=94&seed=1770&speed=150&quality=high&hue=40");
+    expect(state).toEqual({ mode: 2, intensity: 94, seed: 1770, speed: 150, hue: 40, quality: "high" });
   });
 
   it("resolves every documented mode name case-insensitively", () => {
@@ -67,6 +67,7 @@ describe("parseInstrumentState", () => {
     const state = parseInstrumentState("?mode=solar&intensity=80&seed=42");
     expect(state.mode).toBe(1);
     expect(state.speed).toBe(DEFAULT_STATE.speed);
+    expect(state.hue).toBe(DEFAULT_STATE.hue);
     expect(state.quality).toBe(DEFAULT_STATE.quality);
   });
 });
@@ -90,8 +91,10 @@ describe("normaliseState", () => {
       intensity: -100,
       seed: MAX_SEED + 5000,
       speed: -20,
+      hue: -40,
       quality: "auto"
     });
+    expect(state.hue).toBe(0);
     expect(state.intensity).toBe(MIN_INTENSITY);
     expect(state.seed).toBe(MAX_SEED);
     expect(state.speed).toBe(0);
@@ -110,7 +113,7 @@ describe("normaliseQuality", () => {
 
 describe("instrumentSearchParams", () => {
   it("round-trips through the parser", () => {
-    const state = { mode: 6, intensity: 111, seed: 9090, speed: 175, quality: "ultra" as const };
+    const state = { mode: 6, intensity: 111, seed: 9090, speed: 175, hue: 90, quality: "ultra" as const };
     expect(parseInstrumentState(`?${instrumentSearchParams(state).toString()}`)).toEqual(state);
   });
 
@@ -125,11 +128,17 @@ describe("instrumentSearchParams", () => {
     const params = instrumentSearchParams(DEFAULT_STATE);
     expect(params.has("speed")).toBe(false);
     expect(params.has("quality")).toBe(false);
+    expect(params.has("hue")).toBe(false);
     expect(params.get("mode")).toBe("aurora");
   });
 });
 
 describe("presets", () => {
+  it("covers twelve named field modes", () => {
+    expect(MODES).toHaveLength(12);
+    expect(PRESETS).toHaveLength(12);
+  });
+
   it("declares a unique, in-range composition for each entry", () => {
     const ids = new Set(PRESETS.map((preset) => preset.id));
     expect(ids.size).toBe(PRESETS.length);

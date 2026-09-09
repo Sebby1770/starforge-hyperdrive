@@ -23,7 +23,7 @@ const CHANNELS: usize = 4;
 const MAX_BUFFER_LEN: usize = MAX_WIDTH * MAX_HEIGHT * CHANNELS;
 
 /// Number of distinct field equations and palettes the engine exposes.
-const MODE_COUNT: u32 = 8;
+const MODE_COUNT: u32 = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct RenderState {
@@ -32,6 +32,7 @@ struct RenderState {
     pointer_down: f32,
     mode: u32,
     intensity: f32,
+    hue: f32,
     seed: u32,
     width: usize,
     height: usize,
@@ -43,6 +44,7 @@ const DEFAULT_STATE: RenderState = RenderState {
     pointer_down: 0.0,
     mode: 0,
     intensity: 0.76,
+    hue: 0.0,
     seed: 1337,
     width: TILE_WIDTH * DEFAULT_SCALE as usize,
     height: TILE_HEIGHT * DEFAULT_SCALE as usize,
@@ -138,6 +140,14 @@ pub extern "C" fn reseed(value: u32) {
     }
 }
 
+/// Rotate the palette. `0.0` is the native hue of the mode; `1.0` is a full turn.
+#[unsafe(no_mangle)]
+pub extern "C" fn set_hue(value: f32) {
+    unsafe {
+        STATE.hue = clamp(value, 0.0, 1.0);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn render(elapsed_ms: f32) {
     let state = unsafe { STATE };
@@ -189,6 +199,7 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> 
         pointer_down,
         mode,
         intensity,
+        hue,
         seed,
         width,
         height,
@@ -204,7 +215,7 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> 
         spin_rate: time * (0.22 + intensity * 0.2),
         lane_gain: 4.6 + intensity * 1.4,
         ring_gain: 5.0 + intensity * 2.7,
-        palette_offset: seed_x * 0.013 + seed_y * 0.009,
+        palette_offset: seed_x * 0.013 + seed_y * 0.009 + hue,
         seed_x,
         seed_y,
         spark_seed_x: seed_x * 2.1,
@@ -267,12 +278,23 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> 
             let core = smoothstep(1.08, 0.04, radius + noise * 0.16);
             let cursor_bloom = smoothstep(0.42, 0.0, pointer_dist) * (0.22 + pointer_down * 0.7);
             let energy = clamp(
-                noise * 0.74
-                    + lane * 0.28
-                    + rings * 0.18
-                    + core * 0.58
-                    + spark * 1.25
-                    + cursor_bloom,
+                mode_energy(
+                    mode,
+                    &FieldSample {
+                        noise,
+                        lane,
+                        rings,
+                        core,
+                        spark,
+                        cursor_bloom,
+                        radius,
+                        sx,
+                        sy,
+                        ny,
+                        pointer_dist,
+                    },
+                    &constants,
+                ),
                 0.0,
                 1.65,
             );
@@ -300,6 +322,96 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> 
     flux_total / (width * height) as f32
 }
 
+/// Per-pixel field terms shared by every mode mix.
+///
+/// Packed so `mode_energy` stays under Clippy's argument limit without
+/// collapsing the per-mode equations into one giant function.
+#[derive(Clone, Copy)]
+struct FieldSample {
+    noise: f32,
+    lane: f32,
+    rings: f32,
+    core: f32,
+    spark: f32,
+    cursor_bloom: f32,
+    radius: f32,
+    sx: f32,
+    sy: f32,
+    ny: f32,
+    pointer_dist: f32,
+}
+
+/// Mode-specific field mix. Shared geometry (noise, lanes, rings) is weighted
+/// so each mode is a different instrument rather than a palette swap.
+#[inline(always)]
+fn mode_energy(mode: u32, sample: &FieldSample, constants: &FrameConstants) -> f32 {
+    let time = constants.time;
+    let pulse = 0.55 + 0.45 * sin(time * 6.2 + sample.radius * 4.0);
+    let FieldSample {
+        noise,
+        lane,
+        rings,
+        core,
+        spark,
+        cursor_bloom,
+        radius,
+        sx,
+        sy,
+        ny,
+        pointer_dist,
+    } = *sample;
+
+    match mode {
+        // Aurora: original balanced mix.
+        0 => noise * 0.74 + lane * 0.28 + rings * 0.18 + core * 0.58 + spark * 1.25 + cursor_bloom,
+        // Solar: corona — core and rings, almost no lanes.
+        1 => core * 1.15 + rings * 0.55 + spark * 0.85 + noise * 0.22 + cursor_bloom * 1.2,
+        // Circuit: manhattan lanes, hard edges.
+        2 => lane * 1.15 + noise * 0.35 + spark * 1.6 + core * 0.18 + cursor_bloom,
+        // Tunnel: concentric rings dominate.
+        3 => rings * 1.25 + core * 0.7 + noise * 0.2 + spark * 0.4 + cursor_bloom,
+        // Nebula: soft fBm cloud, almost no structure.
+        4 => noise * 1.22 + core * 0.28 + spark * 0.55 + cursor_bloom * 0.7,
+        // Lattice: axis-aligned weave.
+        5 => {
+            let grid = (1.0 - smoothstep(0.0, 0.08, abs(fract(abs(sx) * 7.0) - 0.5)))
+                * (1.0 - smoothstep(0.0, 0.08, abs(fract(abs(sy) * 7.0) - 0.5)));
+            grid * 0.95 + noise * 0.4 + spark * 0.9 + cursor_bloom
+        }
+        // Prism: spectral split along radius.
+        6 => radius * 0.55 + rings * 0.7 + noise * 0.35 + spark * 1.1 + cursor_bloom,
+        // Vortex: angular arms.
+        7 => {
+            let arms = 1.0 - smoothstep(0.0, 0.18, abs(sin(libm::atan2f(sy, sx) * 3.0 + time)));
+            arms * 0.9 + core * 0.45 + noise * 0.3 + spark * 0.7 + cursor_bloom
+        }
+        // Tide: horizontal swell.
+        8 => {
+            let swell = 0.5 + 0.5 * sin(ny * 9.0 + time * 1.4 + noise * 2.0);
+            swell * 0.85 + noise * 0.4 + spark * 0.5 + cursor_bloom
+        }
+        // Pulsar: breathing core.
+        9 => {
+            core * pulse * 1.35
+                + rings * (1.0 - pulse) * 0.8
+                + spark * pulse
+                + noise * 0.15
+                + cursor_bloom
+        }
+        // Forge: ember sparks and heat.
+        10 => spark * 2.1 + core * 0.7 + noise * 0.45 + lane * 0.12 + cursor_bloom * 0.8,
+        // Eclipse: dark disk, bright rim.
+        _ => {
+            let rim = smoothstep(0.55, 0.72, radius) * smoothstep(1.05, 0.78, radius);
+            rim * 1.4
+                + (1.0 - core) * rings * 0.35
+                + spark * 0.25
+                + cursor_bloom * 1.4
+                + smoothstep(0.2, 0.0, pointer_dist) * 0.3
+        }
+    }
+}
+
 #[inline(always)]
 fn color_phase(
     mode: u32,
@@ -317,16 +429,20 @@ fn color_phase(
         1 => radius * 0.76 - noise * 0.28 + time * 0.055,
         2 => (sx - sy) * 0.34 + noise * 0.64 + time * 0.037,
         3 => (sx + sy) * 0.34 + rings * 0.4 + time * 0.064,
-        // Nebula: slow chromatic drift dominated by the noise field.
         4 => noise * 1.18 - radius * 0.22 + time * 0.029,
-        // Lattice: axis-aligned banding that reads as a woven grid.
         5 => abs(sx) * 0.62 + abs(sy) * 0.62 + noise * 0.3 + time * 0.041,
-        // Prism: radial spectrum split with a counter-rotating ring term.
         6 => radius * 1.24 - rings * 0.36 + noise * 0.18 - time * 0.048,
-        // Vortex: angular sweep, so colour rotates with the spin rather than
-        // the radius.
-        _ => (sx * sy) * 0.9 + noise * 0.44 + time * 0.072,
+        7 => (sx * sy) * 0.9 + noise * 0.44 + time * 0.072,
+        8 => sy * 0.85 + noise * 0.4 + time * 0.05,
+        9 => radius * 0.4 + time * 0.11 + noise * 0.2,
+        10 => noise * 0.55 + spark_phase(sx, sy) + time * 0.06,
+        _ => radius * 0.9 - noise * 0.5 + time * 0.033,
     }
+}
+
+#[inline(always)]
+fn spark_phase(sx: f32, sy: f32) -> f32 {
+    fract(abs(sx) * 3.1 + abs(sy) * 2.7)
 }
 
 fn palette(mode: u32, t: f32) -> (f32, f32, f32) {
@@ -372,10 +488,34 @@ fn palette(mode: u32, t: f32) -> (f32, f32, f32) {
             0.24 + 0.76 * wave(0.667),
         ),
         // Vortex: ember tones biased warm.
-        _ => (
+        7 => (
             0.5 + 0.5 * wave(0.07),
             0.16 + 0.56 * wave(0.42),
             0.05 + 0.35 * wave(0.71),
+        ),
+        // Tide: deep teal and foam.
+        8 => (
+            0.05 + 0.45 * wave(0.6),
+            0.28 + 0.62 * wave(0.18),
+            0.42 + 0.58 * wave(0.04),
+        ),
+        // Pulsar: ice-white with electric blue.
+        9 => (
+            0.55 + 0.45 * wave(0.0),
+            0.6 + 0.4 * wave(0.12),
+            0.85 + 0.15 * wave(0.55),
+        ),
+        // Forge: molten iron.
+        10 => (
+            0.72 + 0.28 * wave(0.05),
+            0.18 + 0.42 * wave(0.22),
+            0.04 + 0.18 * wave(0.7),
+        ),
+        // Eclipse: gold rim on a near-black floor.
+        _ => (
+            0.08 + 0.72 * wave(0.08),
+            0.05 + 0.42 * wave(0.2),
+            0.04 + 0.22 * wave(0.48),
         ),
     }
 }
@@ -640,6 +780,7 @@ mod tests {
         set_pointer(9.0, -7.0, 42);
         set_mode(MODE_COUNT + 3);
         set_intensity(9.0);
+        set_hue(4.0);
         reseed(u32::MAX);
 
         let upper_state = unsafe { STATE };
@@ -648,15 +789,18 @@ mod tests {
         assert_eq!(upper_state.pointer_down, 1.0);
         assert_eq!(upper_state.mode, 3);
         assert_eq!(upper_state.intensity, 1.35);
+        assert_eq!(upper_state.hue, 1.0);
         assert_eq!(upper_state.seed, u32::MAX);
 
         set_pointer(-9.0, 7.0, 0);
         set_intensity(-4.0);
+        set_hue(-1.0);
         let lower_state = unsafe { STATE };
         assert_eq!(lower_state.pointer_x, -2.0);
         assert_eq!(lower_state.pointer_y, 2.0);
         assert_eq!(lower_state.pointer_down, 0.0);
         assert_eq!(lower_state.intensity, 0.15);
+        assert_eq!(lower_state.hue, 0.0);
 
         reset_state();
     }
@@ -837,6 +981,19 @@ mod tests {
             "flux must stay inside the exposure clamp, got {flux}"
         );
         assert!(flux > 0.0, "a lit frame must report non-zero flux");
+    }
+
+    #[test]
+    fn hue_rotates_the_palette_without_blanking_the_frame() {
+        let base = RenderState {
+            seed: 44,
+            ..DEFAULT_STATE
+        };
+        let shifted = RenderState { hue: 0.33, ..base };
+        let a = frame_for(base, 1600.0);
+        let b = frame_for(shifted, 1600.0);
+        assert_ne!(checksum(&a), checksum(&b));
+        assert!(b.chunks_exact(CHANNELS).any(|px| px[..3] != [0, 0, 0]));
     }
 
     #[test]

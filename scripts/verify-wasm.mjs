@@ -21,6 +21,7 @@ const requiredFunctions = [
   "set_pointer",
   "set_mode",
   "set_intensity",
+  "set_hue",
   "reseed"
 ];
 
@@ -38,7 +39,7 @@ const MIN_SCALE = 2;
 const MAX_SCALE = 8;
 const TILE_WIDTH = 160;
 const TILE_HEIGHT = 98;
-const MODE_COUNT = 8;
+const MODE_COUNT = 12;
 
 if (engine.mode_count() !== MODE_COUNT) {
   throw new Error(`Engine reports ${engine.mode_count()} modes, expected ${MODE_COUNT}.`);
@@ -108,10 +109,11 @@ if (framebufferPointer < 0 || framebufferPointer + frameLength > engine.memory.b
   throw new Error("Framebuffer export points outside WASM memory.");
 }
 
-function renderScenario({ mode, intensity, seed, pointerX, pointerY, pointerDown, elapsedMs }) {
+function renderScenario({ mode, intensity, seed, pointerX, pointerY, pointerDown, elapsedMs, hue = 0 }) {
   engine.reseed(seed);
   engine.set_mode(mode);
   engine.set_intensity(intensity);
+  engine.set_hue(hue);
   engine.set_pointer(pointerX, pointerY, pointerDown);
   engine.render(elapsedMs);
 
@@ -207,8 +209,10 @@ if (baseline.checksum !== repeated.checksum) {
   throw new Error("Identical renderer inputs did not produce a deterministic frame.");
 }
 
+const hueShift = renderScenario({ ...baselineInput, hue: 0.33 });
 const modeDifference = differenceRatio(baseline.frame, alternateMode.frame);
 const seedDifference = differenceRatio(baseline.frame, alternateSeed.frame);
+const hueDifference = differenceRatio(baseline.frame, hueShift.frame);
 const adjacentHighSeedDifference = differenceRatio(penultimateSeed.frame, ultimateSeed.frame);
 
 if (modeDifference < 0.25 || seedDifference < 0.25 || adjacentHighSeedDifference < 0.25) {
@@ -217,6 +221,10 @@ if (modeDifference < 0.25 || seedDifference < 0.25 || adjacentHighSeedDifference
       `seed=${seedDifference.toFixed(3)} ` +
       `adjacent-high-seed=${adjacentHighSeedDifference.toFixed(3)}`
   );
+}
+
+if (hueDifference < 0.08) {
+  throw new Error(`Hue rotation did not change the frame (delta=${hueDifference.toFixed(3)}).`);
 }
 
 // Each palette/field pairing is a separate code path; a mode that silently
@@ -291,6 +299,7 @@ console.log(
     `${Math.round(baseline.coverage * 100)}% lit, ` +
     `${Math.round(modeDifference * 100)}% mode delta, ` +
     `${Math.round(seedDifference * 100)}% seed delta, ` +
+    `${Math.round(hueDifference * 100)}% hue delta, ` +
     `${Math.round(adjacentHighSeedDifference * 100)}% adjacent-u32 delta, ` +
     `checksum ${baseline.checksum}, ` +
     `flux ${dimFlux.toFixed(3)}->${brightFlux.toFixed(3)}.`

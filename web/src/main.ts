@@ -2,13 +2,16 @@ import "./styles.css";
 import { isInteractiveShortcutTarget } from "./keyboard";
 import { initSpotlightCards, initUiChrome } from "./effects";
 import { createRenderer, type RenderMetrics } from "./renderer";
+import { createDriveAudio } from "./drive-audio";
 import {
   ADAPTIVE_SCALES,
   DEFAULT_STATE,
   EXPORT_SCALE,
+  MAX_HUE,
   MAX_INTENSITY,
   MAX_SEED,
   MAX_SPEED,
+  MIN_HUE,
   MIN_INTENSITY,
   MIN_SPEED,
   MODES,
@@ -38,6 +41,7 @@ type StarforgeExports = {
   set_pointer: (x: number, y: number, down: number) => void;
   set_mode: (mode: number) => void;
   set_intensity: (value: number) => void;
+  set_hue: (value: number) => void;
   reseed: (value: number) => void;
 };
 
@@ -81,6 +85,11 @@ const intensityInput = requiredElement<HTMLInputElement>("#intensity");
 const intensityOutput = requiredElement<HTMLOutputElement>("#intensity-output");
 const speedInput = requiredElement<HTMLInputElement>("#speed");
 const speedOutput = requiredElement<HTMLOutputElement>("#speed-output");
+const hueInput = requiredElement<HTMLInputElement>("#hue");
+const hueOutput = requiredElement<HTMLOutputElement>("#hue-output");
+const driveAudioButton = requiredElement<HTMLButtonElement>("#drive-audio");
+const driveAudioLabel = requiredElement<HTMLElement>("#drive-audio-label");
+const driveAudio = createDriveAudio(true);
 const qualitySelect = requiredElement<HTMLSelectElement>("#quality");
 const seedInput = requiredElement<HTMLInputElement>("#seed");
 const shuffleButton = requiredElement<HTMLButtonElement>("#shuffle");
@@ -131,6 +140,7 @@ let adaptiveSamples = 0;
 let adaptiveScale = 0;
 
 syncControls();
+syncDriveAudioUi();
 
 let wasm: StarforgeExports;
 
@@ -248,6 +258,17 @@ speedInput.addEventListener("input", () => {
   updateInstrumentState({ ...instrumentState, speed });
 });
 
+hueInput.addEventListener("input", () => {
+  const hue = boundedInteger(hueInput.value, MIN_HUE, MAX_HUE, instrumentState.hue);
+  updateInstrumentState({ ...instrumentState, hue });
+});
+
+driveAudioButton.addEventListener("click", () => {
+  driveAudio.setMuted(!driveAudio.muted);
+  syncDriveAudioUi();
+  setStatus(driveAudio.muted ? "Drive audio off." : "Drive audio following flux.");
+});
+
 qualitySelect.addEventListener("change", () => {
   updateInstrumentState(
     { ...instrumentState, quality: qualitySelect.value as QualityTier },
@@ -318,6 +339,7 @@ async function loadWasm(): Promise<StarforgeExports> {
     "set_pointer",
     "set_mode",
     "set_intensity",
+    "set_hue",
     "reseed"
   ];
 
@@ -487,6 +509,7 @@ function paintFrame() {
  */
 function updateTelemetry() {
   const flux = wasm.flux();
+  driveAudio.setFlux(flux, instrumentState.intensity / 100);
   fluxDisplay.textContent = Number.isFinite(flux) ? `${Math.round((flux / 1.6) * 100)}%` : "—";
   renderDisplay.textContent = `${(engineMsAverage + lastMetrics.uploadMs + lastMetrics.drawMs).toFixed(2)} ms`;
 }
@@ -501,6 +524,7 @@ function paintFrameIfPaused() {
 function applyEngineState() {
   wasm.set_mode(instrumentState.mode);
   wasm.set_intensity(instrumentState.intensity / 100);
+  wasm.set_hue(instrumentState.hue / 360);
   wasm.reseed(instrumentState.seed);
 }
 
@@ -557,6 +581,9 @@ function syncControls() {
   speedInput.value = String(instrumentState.speed);
   speedOutput.value = `${instrumentState.speed}%`;
   speedInput.setAttribute("aria-valuetext", `${instrumentState.speed} percent`);
+  hueInput.value = String(instrumentState.hue);
+  hueOutput.value = `${instrumentState.hue}°`;
+  hueInput.setAttribute("aria-valuetext", `${instrumentState.hue} degrees`);
   qualitySelect.value = instrumentState.quality;
   seedInput.value = String(instrumentState.seed);
   canvas.setAttribute(
@@ -801,10 +828,29 @@ function handleKeyboardShortcut(event: KeyboardEvent) {
   } else if (key === "f") {
     event.preventDefault();
     void toggleFullscreen();
-  } else if (/^[1-8]$/.test(key)) {
+  } else if (/^[1-9]$/.test(key)) {
     event.preventDefault();
     selectMode(Number(key) - 1);
+  } else if (key === "0") {
+    event.preventDefault();
+    selectMode(9);
+  } else if (key === "-" || key === "_") {
+    event.preventDefault();
+    selectMode(10);
+  } else if (key === "=" || key === "+") {
+    event.preventDefault();
+    selectMode(11);
+  } else if (key === "m") {
+    event.preventDefault();
+    driveAudio.setMuted(!driveAudio.muted);
+    syncDriveAudioUi();
+    setStatus(driveAudio.muted ? "Drive audio off." : "Drive audio following flux.");
   }
+}
+
+function syncDriveAudioUi() {
+  driveAudioLabel.textContent = driveAudio.muted ? "Audio off" : "Audio on";
+  driveAudioButton.setAttribute("aria-pressed", String(!driveAudio.muted));
 }
 
 function sendPointer(event: PointerEvent) {

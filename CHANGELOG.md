@@ -2,42 +2,23 @@
 
 All notable changes to **starforge-hyperdrive** are documented here.
 
-## [Unreleased]
+## 0.4.0 - 2026-09-09
 
-### Fixed
-- Completed the unfinished merge between the tested-engine and WebGL lineages.
-  The half-resolved tree had kept the CPU-only control surface while leaving
-  `web/src/renderer.ts` and `web/src/effects.ts` orphaned, so three features the
-  0.2.0 notes already claimed were silently absent from the running app:
-  - **The flux meter was fake.** It echoed the intensity slider because the Rust
-    `flux()` export had been dropped in the merge. The engine now accumulates
-    mean per-pixel exposure again and the meter reads it back per frame.
-  - **The WebGL renderer was dead code.** Rendering went straight to a 2D
-    context; it now runs through `createRenderer()` (WebGL2, Canvas2D fallback)
-    and reports the live backend and frame time.
-  - **Hide-UI and spotlight cards were dead code.** `initUiChrome()` and
-    `initSpotlightCards()` were never called and their markup hooks were absent.
-- Telemetry now refreshes on every control change, not only inside the animation
-  loop, so meters stay correct while playback is paused.
-- Canvas2D fallback rebuilds its `ImageData` when the engine reports different
-  frame dimensions instead of throwing on a length mismatch.
-- Moved the Hide-UI toggle into the header; as a child of the control dock it
-  hid itself, stranding pointer users in a chrome-less view.
+Twelve instruments, not eight palettes.
 
 ### Added
-- `web/src/instrument-state.ts`: the share-link contract (parse, clamp,
-  serialise) extracted as a pure module.
-- Vitest suite with 16 tests covering share-link parsing/clamping/round-trips
-  and the keyboard shortcut guard.
-- Three Rust tests pinning flux to the exposure clamp and to intensity.
-- WASM ABI verifier now proves `flux()` is a real readback that tracks
-  intensity rather than a constant.
+
+- Four field modes: Tide, Pulsar, Forge, Eclipse. Keyboard `1`–`9`, `0`, `-`, `=`.
+- Each mode now has its own field mix, not just a palette swap.
+- Hue control (0–360°), carried in the share link when it is not zero.
+- Optional flux-driven drive audio (`M`). Off until you turn it on.
+- Four more presets: Flood, Beacon, Crucible, Occultation.
 
 ### Changed
-- TypeScript raised to `noUnusedLocals`, `noUnusedParameters`,
-  `exactOptionalPropertyTypes`, and `noImplicitOverride`.
-- CI runs `cargo clippy -D warnings`, a type-check, and the Vitest suite.
 
+- Share-link contract now round-trips `hue` the same way it already did `speed`
+  and `quality`: omitted at the default, clamped otherwise.
+- WASM ABI verifier checks hue rotation and all twelve modes.
 
 ## 0.3.0 - 2026-09-07
 
@@ -81,6 +62,24 @@ All notable changes to **starforge-hyperdrive** are documented here.
 
 ### Fixed
 
+- Completed the unfinished merge between the tested-engine and WebGL lineages.
+  The half-resolved tree had kept the CPU-only control surface while leaving
+  `web/src/renderer.ts` and `web/src/effects.ts` orphaned, so three features the
+  0.2.0 notes already claimed were silently absent from the running app:
+  - **The flux meter was fake.** It echoed the intensity slider because the Rust
+    `flux()` export had been dropped in the merge. The engine now accumulates
+    mean per-pixel exposure again and the meter reads it back per frame.
+  - **The WebGL renderer was dead code.** Rendering went straight to a 2D
+    context; it now runs through `createRenderer()` (WebGL2, Canvas2D fallback)
+    and reports the live backend and frame time.
+  - **Hide-UI and spotlight cards were dead code.** `initUiChrome()` and
+    `initSpotlightCards()` were never called and their markup hooks were absent.
+- Telemetry now refreshes on every control change, not only inside the animation
+  loop, so meters stay correct while playback is paused.
+- Canvas2D fallback rebuilds its `ImageData` when the engine reports different
+  frame dimensions instead of throwing on a length mismatch.
+- Moved the Hide-UI toggle into the header; as a child of the control dock it
+  hid itself, stranding pointer users in a chrome-less view.
 - The `H` (hide UI) shortcut bypassed the interactive-target guard that every
   other shortcut respects: it checked only for a text input, so it fired while a
   button or slider held focus, contradicting the documented shortcut contract
@@ -94,6 +93,7 @@ All notable changes to **starforge-hyperdrive** are documented here.
 
 - Nothing. Share links minted before this release still open unchanged; `speed`
   and `quality` fall back to their defaults.
+
 ## [0.2.0] - 2026-07-04
 
 ### Added
