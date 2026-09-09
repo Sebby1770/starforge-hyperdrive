@@ -2,6 +2,16 @@
 
 All notable changes to **starforge-hyperdrive** are documented here.
 
+## 0.4.1 - 2026-09-09
+
+### Fixed
+
+- Clippy 1.98 rejects `chunks_exact` with a constant size under `-D warnings`.
+  Tests now walk pixels with `as_chunks`.
+- `wasm-opt` on GitHub Pages validated MVP only and rejected rustc's saturating
+  float-to-int. The build script enables the features rustc actually emits, and
+  copies the unoptimized module if optimization still fails.
+
 ## 0.4.0 - 2026-09-09
 
 Twelve instruments, not eight palettes.

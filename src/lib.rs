@@ -675,6 +675,10 @@ mod tests {
         })
     }
 
+    fn pixels(frame: &[u8]) -> &[[u8; CHANNELS]] {
+        frame.as_chunks::<CHANNELS>().0
+    }
+
     fn reset_state() {
         unsafe {
             STATE = DEFAULT_STATE;
@@ -758,9 +762,7 @@ mod tests {
             "the test tier must not be the largest"
         );
         assert!(
-            buffer[..active]
-                .chunks_exact(CHANNELS)
-                .all(|px| px[3] == 255),
+            pixels(&buffer[..active]).iter().all(|px| px[3] == 255),
             "the active frame was left partly unwritten"
         );
         assert!(
@@ -821,10 +823,10 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(checksum(&first) > 0);
-        assert!(first.chunks_exact(CHANNELS).all(|pixel| pixel[3] == 255));
+        assert!(pixels(&first).iter().all(|pixel| pixel[3] == 255));
 
-        let dynamic_pixels = first
-            .chunks_exact(CHANNELS)
+        let dynamic_pixels = pixels(&first)
+            .iter()
             .filter(|pixel| pixel[0] != pixel[1] || pixel[1] != pixel[2])
             .count();
         assert!(dynamic_pixels > state.width * state.height / 2);
@@ -842,7 +844,7 @@ mod tests {
             let frame = frame_for(RenderState { mode, ..base }, 1800.0);
 
             assert!(
-                frame.chunks_exact(CHANNELS).any(|px| px[..3] != [0, 0, 0]),
+                pixels(&frame).iter().any(|px| px[..3] != [0, 0, 0]),
                 "mode {mode} rendered a black frame"
             );
             checksums.push(checksum(&frame));
@@ -940,9 +942,9 @@ mod tests {
         };
         let penultimate_frame = frame_for(penultimate, 2400.0);
         let ultimate_frame = frame_for(ultimate, 2400.0);
-        let changed_pixels = penultimate_frame
-            .chunks_exact(CHANNELS)
-            .zip(ultimate_frame.chunks_exact(CHANNELS))
+        let changed_pixels = pixels(&penultimate_frame)
+            .iter()
+            .zip(pixels(&ultimate_frame).iter())
             .filter(|(left, right)| left[..3] != right[..3])
             .count();
 
@@ -993,7 +995,7 @@ mod tests {
         let a = frame_for(base, 1600.0);
         let b = frame_for(shifted, 1600.0);
         assert_ne!(checksum(&a), checksum(&b));
-        assert!(b.chunks_exact(CHANNELS).any(|px| px[..3] != [0, 0, 0]));
+        assert!(pixels(&b).iter().any(|px| px[..3] != [0, 0, 0]));
     }
 
     #[test]

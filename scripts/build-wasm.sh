@@ -16,8 +16,20 @@ cargo build \
 mkdir -p "$(dirname "$PUBLIC_OUT")"
 
 if command -v wasm-opt >/dev/null 2>&1; then
-  wasm-opt -Oz "$WASM_OUT" -o "$PUBLIC_OUT"
-  printf 'Built and optimized %s\n' "$PUBLIC_OUT"
+  # rustc emits saturating float-to-int, sign extension, and bulk memory.
+  # Default wasm-opt validates MVP only, which rejects that module.
+  if wasm-opt -Oz \
+    --enable-nontrapping-float-to-int \
+    --enable-sign-ext \
+    --enable-mutable-globals \
+    --enable-bulk-memory \
+    "$WASM_OUT" \
+    -o "$PUBLIC_OUT"; then
+    printf 'Built and optimized %s\n' "$PUBLIC_OUT"
+  else
+    cp "$WASM_OUT" "$PUBLIC_OUT"
+    printf 'wasm-opt rejected the module; copied unoptimized %s\n' "$PUBLIC_OUT"
+  fi
 else
   cp "$WASM_OUT" "$PUBLIC_OUT"
   printf 'Built %s (install binaryen for wasm-opt)\n' "$PUBLIC_OUT"
