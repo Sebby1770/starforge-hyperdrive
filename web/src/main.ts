@@ -3,6 +3,7 @@ import { isInteractiveShortcutTarget } from "./keyboard";
 import { initSpotlightCards, initUiChrome } from "./effects";
 import { createRenderer, type RenderMetrics } from "./renderer";
 import { createDriveAudio } from "./drive-audio";
+import { RenderPool, poolSizeFor, type EngineParams, type PoolWorker } from "./render-pool";
 import {
   ADAPTIVE_SCALES,
   DEFAULT_STATE,
@@ -59,6 +60,17 @@ const TARGET_FRAME_MS = 1000 / 45;
  * texture upload, compositing, and everything else sharing the main thread.
  */
 const ADAPTIVE_BUDGET_MS = 16;
+
+/**
+ * Frame-cost budget while the render pool is active.
+ *
+ * `ADAPTIVE_BUDGET_MS` is set below the frame interval to leave the main thread
+ * room for upload and compositing, because there the engine runs *on* the main
+ * thread. Pool frames render on worker threads, so that contention is gone and
+ * the only requirement is that a frame lands inside the frame interval. The 15%
+ * margin absorbs frame-to-frame variance and the texture upload.
+ */
+const POOL_BUDGET_MS = TARGET_FRAME_MS * 0.85;
 
 /** Consecutive samples required before the adaptive tier is allowed to move. */
 const ADAPTIVE_SAMPLE_WINDOW = 30;
@@ -130,6 +142,26 @@ let fpsAverage = 45;
 let engineMsAverage = 0;
 let adaptiveSamples = 0;
 
+/** Flux of the frame currently on screen, from whichever path rendered it. */
+let lastFlux = 0;
+
+/**
+ * Pointer as last sent to the engine.
+ *
+ * The main-thread engine keeps its own copy, but pool workers are handed the
+ * complete state with every frame, so the control surface needs to hold it.
+ */
+const pointer = { x: 0, y: 0, down: false };
+
+/**
+ * Parallel renderer, once its workers are up. Null means frames render on the
+ * main thread: before the pool is ready, on single-core machines, and for good
+ * after any worker failure.
+ */
+let pool: RenderPool | null = null;
+let poolFrameInFlight = false;
+let poolFrameQueued = false;
+
 /**
  * Tier the adaptive controller has settled on for playback.
  *
@@ -143,9 +175,10 @@ syncControls();
 syncDriveAudioUi();
 
 let wasm: StarforgeExports;
+let engineModule: WebAssembly.Module;
 
 try {
-  wasm = await loadWasm();
+  ({ engine: wasm, module: engineModule } = await loadWasm());
 } catch (error) {
   const detail = error instanceof Error ? error.message : "Unknown WebAssembly error.";
   showFatalError(`Starforge could not ignite: ${detail}`);
@@ -186,6 +219,10 @@ if (isPlaying) {
   setStatus("Reduced motion detected. The field is paused; press Play to animate it.");
 }
 
+// The first frame is already on screen from the main thread; bring the pool up
+// in the background and switch to it once every worker has the engine loaded.
+void startRenderPool();
+
 window.addEventListener("resize", fitCanvas, { passive: true });
 window.addEventListener("popstate", () => {
   updateInstrumentState(readUrlState(), {
@@ -211,7 +248,7 @@ canvas.addEventListener("pointerup", (event) => {
 canvas.addEventListener("pointercancel", resetPointer);
 canvas.addEventListener("pointerleave", () => {
   if (!pointerDown) {
-    wasm.set_pointer(0, 0, 0);
+    setEnginePointer(0, 0, false);
     paintFrameIfPaused();
   }
 });
@@ -315,7 +352,7 @@ function requiredElement<T extends Element>(selector: string): T {
   return element;
 }
 
-async function loadWasm(): Promise<StarforgeExports> {
+async function loadWasm(): Promise<{ engine: StarforgeExports; module: WebAssembly.Module }> {
   const wasmUrl = `${import.meta.env.BASE_URL}starforge_hyperdrive.wasm`;
   const response = await fetch(wasmUrl);
 
@@ -324,7 +361,10 @@ async function loadWasm(): Promise<StarforgeExports> {
   }
 
   const bytes = await response.arrayBuffer();
-  const { instance } = await WebAssembly.instantiate(bytes, {});
+  // Compile once and keep the module: the render pool instantiates it in every
+  // worker without fetching or validating the bytes again.
+  const module = await WebAssembly.compile(bytes);
+  const instance = await WebAssembly.instantiate(module, {});
   const exports = instance.exports as Record<string, unknown>;
   const requiredFunctions: Array<keyof Omit<StarforgeExports, "memory">> = [
     "width",
@@ -361,7 +401,133 @@ async function loadWasm(): Promise<StarforgeExports> {
     );
   }
 
-  return engine;
+  return { engine, module };
+}
+
+/**
+ * Bring up the parallel renderer.
+ *
+ * Failure is never fatal: the instrument simply stays on the main-thread path
+ * it has been using since the first frame.
+ */
+async function startRenderPool() {
+  const size = poolSizeFor(navigator.hardwareConcurrency);
+
+  if (size === 0 || typeof Worker === "undefined") {
+    return;
+  }
+
+  const spawn = () =>
+    new Worker(new URL("./render-worker.ts", import.meta.url), {
+      type: "module"
+    }) as unknown as PoolWorker;
+
+  const created = await RenderPool.create(engineModule, size, spawn);
+
+  if (!created) {
+    return;
+  }
+
+  pool = created;
+  backendDisplay.textContent = `${backendLabel()} ×${created.size}`;
+  backendDisplay.title = `Rendering in parallel on ${created.size} worker threads`;
+  // Re-measure from scratch: the adaptive controller's history describes the
+  // single-threaded cost, which no longer applies.
+  engineMsAverage = 0;
+  adaptiveSamples = 0;
+  paintFrame();
+}
+
+function backendLabel() {
+  return activeRenderer.backend === "webgl" ? "WebGL2" : "Canvas2D";
+}
+
+/** Complete engine state for one frame, as the pool workers need it. */
+function currentEngineParams(scale = activeScale): EngineParams {
+  return {
+    scale,
+    mode: instrumentState.mode,
+    intensity: instrumentState.intensity / 100,
+    hue: instrumentState.hue / 360,
+    seed: instrumentState.seed,
+    pointerX: pointer.x,
+    pointerY: pointer.y,
+    pointerDown: pointer.down,
+    elapsedMs: simulationTime
+  };
+}
+
+function setEnginePointer(x: number, y: number, down: boolean) {
+  pointer.x = x;
+  pointer.y = y;
+  pointer.down = down;
+  wasm.set_pointer(x, y, down ? 1 : 0);
+}
+
+/**
+ * Request a frame from the pool.
+ *
+ * At most one frame is in flight. A request that arrives meanwhile is folded
+ * into a single follow-up render taken with whatever the state is by then, so a
+ * burst of slider or pointer events never builds a backlog.
+ */
+function requestPoolFrame(activePool: RenderPool) {
+  if (poolFrameInFlight) {
+    poolFrameQueued = true;
+    return;
+  }
+
+  poolFrameInFlight = true;
+  const started = performance.now();
+
+  activePool
+    .render(currentEngineParams())
+    .then((frame) => {
+      recordEngineMs(performance.now() - started);
+      lastFlux = frame.flux;
+
+      // The tier can change while a frame is in flight; a stale-sized frame is
+      // dropped and the queued follow-up renders at the new size.
+      if (frame.width === width && frame.height === height) {
+        lastMetrics = activeRenderer.draw(frame.pixels, width, height);
+      } else {
+        poolFrameQueued = true;
+      }
+
+      if (!isPlaying) {
+        updateTelemetry();
+      }
+    })
+    .catch(() => {
+      abandonPool("Parallel rendering stopped; continuing on a single thread.");
+      paintFrame();
+    })
+    .finally(() => {
+      poolFrameInFlight = false;
+
+      if (poolFrameQueued && pool) {
+        poolFrameQueued = false;
+        requestPoolFrame(pool);
+      }
+    });
+}
+
+function abandonPool(message: string) {
+  if (!pool) {
+    return;
+  }
+
+  pool.dispose();
+  pool = null;
+  poolFrameQueued = false;
+  backendDisplay.textContent = backendLabel();
+  backendDisplay.removeAttribute("title");
+  engineMsAverage = 0;
+  setStatus(message, true);
+}
+
+function recordEngineMs(engineMs: number) {
+  engineMsAverage = engineMsAverage === 0 ? engineMs : engineMsAverage * 0.85 + engineMs * 0.15;
 }
 
 /**
@@ -475,7 +641,8 @@ function considerAdaptiveScale() {
   }
 
   adaptiveSamples = 0;
-  const target = nextAdaptiveScale(adaptiveScale, engineMsAverage, ADAPTIVE_BUDGET_MS);
+  const budget = pool ? POOL_BUDGET_MS : ADAPTIVE_BUDGET_MS;
+  const target = nextAdaptiveScale(adaptiveScale, engineMsAverage, budget);
 
   if (target !== adaptiveScale) {
     const direction = target > adaptiveScale ? "Raised" : "Lowered";
@@ -486,10 +653,15 @@ function considerAdaptiveScale() {
 }
 
 function paintFrame() {
+  if (pool) {
+    requestPoolFrame(pool);
+    return;
+  }
+
   const engineStart = performance.now();
   wasm.render(simulationTime);
-  const engineMs = performance.now() - engineStart;
-  engineMsAverage = engineMsAverage === 0 ? engineMs : engineMsAverage * 0.85 + engineMs * 0.15;
+  recordEngineMs(performance.now() - engineStart);
+  lastFlux = wasm.flux();
 
   // WebAssembly.Memory.grow() detaches the old ArrayBuffer, so the view has to
   // be rebuilt whenever the engine has moved its heap underneath us.
@@ -508,7 +680,7 @@ function paintFrame() {
  * to mode, seed, and pointer gravity as well as exposure.
  */
 function updateTelemetry() {
-  const flux = wasm.flux();
+  const flux = lastFlux;
   driveAudio.setFlux(flux, instrumentState.intensity / 100);
   fluxDisplay.textContent = Number.isFinite(flux) ? `${Math.round((flux / 1.6) * 100)}%` : "—";
   renderDisplay.textContent = `${(engineMsAverage + lastMetrics.uploadMs + lastMetrics.drawMs).toFixed(2)} ms`;
@@ -723,28 +895,20 @@ async function exportPng() {
   const { width: exportWidth, height: exportHeight } = resolutionForScale(EXPORT_SCALE);
   setStatus(`Rendering a native ${exportWidth}×${exportHeight} PNG…`);
 
-  const restoreScale = activeScale;
-
   try {
-    // Yield once so the status update paints before the export frame blocks the
-    // main thread.
+    // Yield once so the status update paints before any rendering starts.
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
-    applyScale(EXPORT_SCALE);
-    wasm.render(simulationTime);
-
-    const exportBuffer = readFramebuffer(wasm, width * height * 4);
+    const image = await renderExportImage();
     const exportCanvas = document.createElement("canvas");
-    exportCanvas.width = width;
-    exportCanvas.height = height;
+    exportCanvas.width = image.width;
+    exportCanvas.height = image.height;
     const exportContext = exportCanvas.getContext("2d", { alpha: false });
 
     if (!exportContext) {
       throw new Error("Export canvas unavailable.");
     }
 
-    const image = new ImageData(width, height);
-    image.data.set(exportBuffer);
     exportContext.putImageData(image, 0, 0);
 
     const blob = await canvasBlob(exportCanvas);
@@ -761,11 +925,43 @@ async function exportPng() {
     const detail = error instanceof Error ? error.message : "Unknown export error.";
     setStatus(`PNG export failed: ${detail}`, true);
   } finally {
-    // Always come back to the preview tier, including after a failed export, so
-    // a thrown error cannot strand the instrument at export resolution.
+    exportButton.disabled = false;
+  }
+}
+
+/**
+ * Render the current composition at export resolution.
+ *
+ * With the pool this happens entirely off the main thread and never touches the
+ * on-screen canvas: the visible frame keeps animating at its own tier while the
+ * workers produce the export. The single-threaded fallback has to borrow the
+ * main engine instead, retargeting it and then restoring the preview tier —
+ * including on failure, so a thrown error cannot strand the instrument at
+ * export resolution.
+ */
+async function renderExportImage(): Promise<ImageData> {
+  if (pool) {
+    try {
+      const frame = await pool.render(currentEngineParams(EXPORT_SCALE));
+      const image = new ImageData(frame.width, frame.height);
+      image.data.set(frame.pixels);
+      return image;
+    } catch {
+      abandonPool("Parallel rendering stopped; exporting on a single thread.");
+    }
+  }
+
+  const restoreScale = activeScale;
+
+  try {
+    applyScale(EXPORT_SCALE);
+    wasm.render(simulationTime);
+    const image = new ImageData(width, height);
+    image.data.set(readFramebuffer(wasm, width * height * 4));
+    return image;
+  } finally {
     applyScale(restoreScale);
     paintFrame();
-    exportButton.disabled = false;
   }
 }
 
@@ -862,13 +1058,13 @@ function sendPointer(event: PointerEvent) {
 
   const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2 * (width / height);
   const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
-  wasm.set_pointer(x, y, pointerDown ? 1 : 0);
+  setEnginePointer(x, y, pointerDown);
   paintFrameIfPaused();
 }
 
 function resetPointer() {
   pointerDown = false;
-  wasm.set_pointer(0, 0, 0);
+  setEnginePointer(0, 0, false);
   paintFrameIfPaused();
 }
 

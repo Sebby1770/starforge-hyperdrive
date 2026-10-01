@@ -163,6 +163,31 @@ pub extern "C" fn render(elapsed_ms: f32) {
     }
 }
 
+/// Render rows `y_start..y_end` of the current frame and return their summed
+/// exposure.
+///
+/// Every pixel depends only on its own coordinate and per-frame constants, so a
+/// frame can be split into horizontal bands and rendered by several engine
+/// instances in parallel with bit-identical pixels. Each band is written at its
+/// absolute offset in the framebuffer, so a worker can copy out exactly its own
+/// rows. The return value is a *sum*, not a mean: the caller adds the bands and
+/// divides once by the full pixel count to recover `flux()`.
+///
+/// Out-of-range bounds are clamped to the active frame, and an empty band
+/// renders nothing and returns zero.
+#[unsafe(no_mangle)]
+pub extern "C" fn render_band(elapsed_ms: f32, y_start: u32, y_end: u32) -> f32 {
+    let state = unsafe { STATE };
+    let len = state.width * state.height * CHANNELS;
+    let framebuffer = unsafe {
+        core::slice::from_raw_parts_mut(core::ptr::addr_of_mut!(FRAMEBUFFER) as *mut u8, len)
+    };
+
+    let end = (y_end as usize).min(state.height);
+    let start = (y_start as usize).min(end);
+    render_rows(framebuffer, elapsed_ms, state, start, end)
+}
+
 /// Mean per-pixel exposure of the most recent frame, in the range 0.0..=1.6.
 ///
 /// The control surface reads this as live telemetry, so it is derived from the
@@ -193,6 +218,19 @@ struct FrameConstants {
 }
 
 fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> f32 {
+    let total = render_rows(framebuffer, elapsed_ms, state, 0, state.height);
+    total / (state.width * state.height) as f32
+}
+
+/// Render rows `y_start..y_end` into `framebuffer` at their absolute offsets and
+/// return the summed exposure of those rows.
+fn render_rows(
+    framebuffer: &mut [u8],
+    elapsed_ms: f32,
+    state: RenderState,
+    y_start: usize,
+    y_end: usize,
+) -> f32 {
     let RenderState {
         pointer_x,
         pointer_y,
@@ -227,7 +265,7 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> 
     let inv_height = 1.0 / height as f32;
     let mut flux_total = 0.0_f32;
 
-    for y in 0..height {
+    for y in y_start..y_end {
         let ny = ((y as f32 * inv_height) - 0.5) * 2.0;
         let row = y * width * CHANNELS;
 
@@ -319,7 +357,7 @@ fn render_frame(framebuffer: &mut [u8], elapsed_ms: f32, state: RenderState) -> 
         }
     }
 
-    flux_total / (width * height) as f32
+    flux_total
 }
 
 /// Per-pixel field terms shared by every mode mix.
@@ -1045,6 +1083,80 @@ mod tests {
             abs(low - high) < 0.05,
             "flux drifted between tiers ({low} vs {high})"
         );
+    }
+
+    #[test]
+    fn banded_rendering_matches_the_whole_frame_exactly() {
+        for scale in [MIN_SCALE, 3, 5, MAX_SCALE] {
+            let state = RenderState {
+                mode: 7,
+                seed: 424_242,
+                pointer_x: 0.3,
+                pointer_y: -0.2,
+                pointer_down: 1.0,
+                width: TILE_WIDTH * scale as usize,
+                height: TILE_HEIGHT * scale as usize,
+                ..DEFAULT_STATE
+            };
+            let whole = frame_for(state, 3100.0);
+
+            for bands in [1_usize, 3, 7, 8] {
+                let mut stitched = vec![0_u8; buffer_len(state)];
+                let mut sum = 0.0_f32;
+                for band in 0..bands {
+                    let y0 = band * state.height / bands;
+                    let y1 = (band + 1) * state.height / bands;
+                    sum += render_rows(&mut stitched, 3100.0, state, y0, y1);
+                }
+
+                assert_eq!(whole, stitched, "scale {scale}, {bands} bands diverged");
+
+                let banded_flux = sum / (state.width * state.height) as f32;
+                let whole_flux = flux_for(state, 3100.0);
+                assert!(
+                    abs(banded_flux - whole_flux) < 1e-3,
+                    "scale {scale}, {bands} bands: flux {banded_flux} vs {whole_flux}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_band_writes_only_its_own_rows() {
+        let state = DEFAULT_STATE;
+        let mut frame = vec![0xAB_u8; buffer_len(state)];
+        let row_bytes = state.width * CHANNELS;
+
+        render_rows(&mut frame, 1500.0, state, 40, 90);
+
+        assert!(frame[..40 * row_bytes].iter().all(|byte| *byte == 0xAB));
+        assert!(frame[90 * row_bytes..].iter().all(|byte| *byte == 0xAB));
+        assert!(
+            pixels(&frame[40 * row_bytes..90 * row_bytes])
+                .iter()
+                .all(|pixel| pixel[3] == 255)
+        );
+    }
+
+    #[test]
+    fn render_band_clamps_its_bounds_to_the_active_frame() {
+        let _guard = engine_lock();
+        reset_state();
+
+        assert_eq!(render_band(1000.0, 50, 50), 0.0);
+        assert_eq!(render_band(1000.0, 90, 10), 0.0);
+        assert_eq!(render_band(1000.0, height() + 5, height() + 50), 0.0);
+
+        let clamped = render_band(1000.0, 0, 100_000);
+        render(1000.0);
+        let mean = clamped / (width() * height()) as f32;
+        assert!(
+            abs(mean - flux()) < 1e-3,
+            "clamped band {mean} vs frame {}",
+            flux()
+        );
+
+        reset_state();
     }
 
     #[test]

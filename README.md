@@ -68,7 +68,7 @@ The meter cluster reports what the engine and renderer are actually doing:
 | FPS | Smoothed frame rate of the animation loop |
 | Flux | `flux()` — mean per-pixel exposure of the frame just rendered, as a percentage of the engine's exposure clamp |
 | Frame | GPU upload + draw time for the last presented frame |
-| Backend | `WebGL2`, or `Canvas2D` where WebGL2 is unavailable |
+| Backend | `WebGL2`, or `Canvas2D` where WebGL2 is unavailable, followed by `×N` while frames render on N worker threads |
 | Render | Live engine resolution |
 | Drive | Playback state |
 
@@ -103,10 +103,46 @@ two neighbouring tiers.
 Pausing removes the frame budget entirely, so a held frame is rendered at High
 even when playback was running at Draft. That is the state worth screenshotting.
 
-PNG export is a genuine native render, not an upscale: the engine is retargeted
-to 1280 × 784, one frame is rendered, and the tier is restored — including if
-the export fails. Releases before v0.3.0 saved a bilinear enlargement of the
-320 × 196 preview under the same button.
+PNG export is a genuine native render, not an upscale. With the render pool the
+1280 × 784 frame is produced entirely on worker threads, so the visible canvas
+keeps animating at its own tier throughout. Without a pool the main engine is
+retargeted to 1280 × 784 for one frame and the tier is restored afterwards —
+including if the export fails. Releases before v0.3.0 saved a bilinear
+enlargement of the 320 × 196 preview under the same button.
+
+## Parallel rendering
+
+Every pixel depends only on its own coordinate and a handful of per-frame
+constants, so a frame can be cut into horizontal bands and rendered by several
+independent engine instances at once. The control surface compiles the engine
+once, hands the compiled module to a pool of Web Workers (one per core, minus
+one for the UI thread, up to eight), and stitches their bands back together.
+
+Measured with eight workers on the shipped wasm build, including the cost of
+copying every band back to the main thread:
+
+| Resolution | 1 thread | 8 workers | Speedup |
+| --- | --- | --- | --- |
+| 320 × 196 | 10.2 ms | 1.6 ms | 6.4× |
+| 640 × 392 | 41.8 ms | 7.3 ms | 5.7× |
+| 960 × 588 | 90.0 ms | 13.0 ms | 6.9× |
+| 1280 × 784 | 157.6 ms | 22.7 ms | 6.9× |
+
+The stitched frame is **bit-identical** to a single-threaded render — not
+approximately equal. `scripts/verify-wasm.mjs` proves it at every tier for 1, 3,
+7 and 8 bands, with the framebuffer poisoned between bands so an unwritten row
+cannot pass by coincidence; a native Rust test checks the same property.
+
+Because rendering no longer competes with the UI thread, the adaptive
+controller uses a looser budget while the pool is active (85% of the frame
+interval rather than a fixed 16 ms), so the extra headroom turns into a higher
+tier instead of idle cores.
+
+The pool is strictly an accelerator. Frames render on the main thread until it
+is ready, on machines with fewer than three cores, and permanently after any
+worker failure; the Backend meter drops its `×N` suffix and the status line says
+so. Frames are serialised and coalesced, so a burst of slider or pointer input
+never queues up stale work.
 
 ## Shareable URL state
 
@@ -192,6 +228,8 @@ web/src/keyboard.ts        tested interactive-target shortcut guard
 web/src/instrument-state.ts pure share-link model (parse, clamp, serialise)
 web/src/drive-audio.ts     optional flux-driven tone, muted until enabled
 web/src/renderer.ts        WebGL2 renderer with a Canvas2D fallback
+web/src/render-pool.ts     banded parallel rendering across worker threads
+web/src/render-worker.ts   one band renderer: private engine, transfers its rows
 web/src/effects.ts         spotlight cards and hide-UI chrome
 .github/workflows/pages.yml GitHub Pages build and deploy
 web/src/__tests__/         Vitest unit tests
@@ -202,10 +240,10 @@ web/src/styles.css         responsive cockpit presentation
 
 The WebAssembly boundary remains intentionally small: memory, dimensions,
 maximum dimensions, mode count, resolution selection, framebuffer pointer,
-render, flux readback, pointer input, mode, intensity, hue, and seed. Rendering
-uses a statically sized internal RGBA buffer — allocated for the largest
-supported tier and used as a prefix below it — with no allocator, no
-dependencies, and no network access.
+render, banded render, flux readback, pointer input, mode, intensity, hue, and
+seed. Rendering uses a statically sized internal RGBA buffer — allocated for the
+largest supported tier and used as a prefix below it — with no allocator, no
+dependency beyond `libm`, and no network access.
 
 ### Engine performance
 
@@ -223,6 +261,7 @@ Measured in Node on the shipped `wasm32-unknown-unknown` build:
 | --- | --- | --- |
 | v0.2.0 | 328 | 20.6 ms |
 | v0.3.0 | 153 | 9.6 ms |
+| v0.5.0, 8 workers | 25 | 1.6 ms |
 
 Hand-rolled `floor` and `sqrt` were tried and reverted: `libm` already lowers
 both to a single machine instruction, so replacing them was a measured

@@ -17,6 +17,7 @@ const requiredFunctions = [
   "set_resolution",
   "framebuffer_ptr",
   "render",
+  "render_band",
   "flux",
   "set_pointer",
   "set_mode",
@@ -292,6 +293,83 @@ if (!(brightFlux > dimFlux)) {
   );
 }
 
+
+// Banded rendering is what the parallel pool relies on: several engine
+// instances each render a horizontal slice and the control surface stitches
+// them together. That is only sound if the stitched frame is *bit-identical* to
+// a whole-frame render and the band sums recover the same flux, so prove both at
+// every tier, with band counts that do and do not divide the height evenly.
+const bandedTiers = [];
+for (let scale = MIN_SCALE; scale <= MAX_SCALE; scale += 1) {
+  engine.set_resolution(scale);
+  engine.set_mode(7);
+  engine.set_intensity(1.1);
+  engine.reseed(424242);
+  engine.set_pointer(0.3, -0.2, 1);
+  const tierWidth = engine.width();
+  const tierHeight = engine.height();
+  const tierLength = tierWidth * tierHeight * 4;
+
+  engine.render(3100);
+  const whole = new Uint8Array(engine.memory.buffer, engine.framebuffer_ptr(), tierLength).slice();
+  const wholeFlux = engine.flux();
+
+  for (const bandCount of [1, 3, 7, 8]) {
+    const stitched = new Uint8Array(tierLength);
+    let sum = 0;
+
+    for (let band = 0; band < bandCount; band += 1) {
+      const y0 = Math.floor((band * tierHeight) / bandCount);
+      const y1 = Math.floor(((band + 1) * tierHeight) / bandCount);
+      // Poison the band first so stale bytes from the whole-frame render
+      // cannot make an unwritten row look correct.
+      new Uint8Array(engine.memory.buffer, engine.framebuffer_ptr(), tierLength).fill(0xab);
+      sum += engine.render_band(3100, y0, y1);
+      const rows = new Uint8Array(
+        engine.memory.buffer,
+        engine.framebuffer_ptr() + y0 * tierWidth * 4,
+        (y1 - y0) * tierWidth * 4
+      );
+      stitched.set(rows, y0 * tierWidth * 4);
+    }
+
+    for (let index = 0; index < tierLength; index += 1) {
+      if (stitched[index] !== whole[index]) {
+        throw new Error(
+          `Scale ${scale}, ${bandCount} bands: byte ${index} differs from the whole-frame render.`
+        );
+      }
+    }
+
+    const bandedFlux = sum / (tierWidth * tierHeight);
+    if (Math.abs(bandedFlux - wholeFlux) > 1e-3) {
+      throw new Error(
+        `Scale ${scale}, ${bandCount} bands: flux ${bandedFlux} drifted from ${wholeFlux}.`
+      );
+    }
+  }
+
+  bandedTiers.push(`${tierWidth}x${tierHeight}`);
+}
+
+// Out-of-range bounds clamp to the active frame; an empty band renders nothing.
+engine.set_resolution(MIN_SCALE);
+if (engine.render_band(1000, 50, 50) !== 0 || engine.render_band(1000, 90, 10) !== 0) {
+  throw new Error("An empty band must render nothing and report zero exposure.");
+}
+if (engine.render_band(1000, engine.height() + 5, engine.height() + 50) !== 0) {
+  throw new Error("A band beyond the frame must clamp to empty.");
+}
+const clampedSum = engine.render_band(1000, 0, 100_000);
+engine.render(1000);
+if (Math.abs(clampedSum / (engine.width() * engine.height()) - engine.flux()) > 1e-3) {
+  throw new Error("An over-long band must clamp to the frame height.");
+}
+
+console.log(
+  `Banded rendering is bit-identical to whole-frame rendering at ${bandedTiers.join(", ")} ` +
+    `for 1, 3, 7 and 8 bands.`
+);
 console.log(
   `Verified WASM ABI across scales ${MIN_SCALE}-${MAX_SCALE} ` +
     `(up to ${engine.max_width()}x${engine.max_height()}), ` +
