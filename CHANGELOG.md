@@ -2,6 +2,46 @@
 
 All notable changes to **starforge-hyperdrive** are documented here.
 
+## 0.5.0 - 2026-10-01
+
+### Added
+
+- **Parallel rendering.** Frames are split into horizontal bands and rendered on
+  a pool of Web Workers (one per core minus one, up to eight), each with its own
+  engine instance instantiated from a single shared compiled module. Measured
+  speedup with eight workers, including copying every band back: 6.4x at
+  320 x 196, 5.7x at 640 x 392, 6.9x at 960 x 588 and 1280 x 784.
+- `render_band(elapsed_ms, y_start, y_end)` engine export: renders a slice of
+  the frame at its absolute offset and returns the slice's summed exposure, so
+  band sums recover the exact frame mean. Bounds clamp to the active frame.
+- Contract checks that the stitched frame is bit-identical to a whole-frame
+  render at every tier for 1, 3, 7 and 8 bands (`verify-wasm.mjs`, and a native
+  Rust test), with the framebuffer poisoned between bands.
+- 18 pool tests driven by fake workers that answer out of order: assembly at the
+  right rows, flux recovery, serialisation, clamping, disposal, and every
+  failure path.
+
+### Changed
+
+- **PNG export no longer freezes or flickers the UI.** With the pool, the
+  1280 x 784 frame renders entirely on worker threads and the visible canvas is
+  never resized. Measured longest main-thread frame gap during an export: 12 ms,
+  against roughly 150 ms of blocked main thread before.
+- Auto quality uses a budget of 85% of the frame interval while the pool is
+  active. The fixed 16 ms budget existed to leave the main thread headroom,
+  which no longer applies once the engine runs off it.
+- The Backend meter shows `xN` while N workers are rendering.
+
+### Fixed
+
+- The README claimed the engine had no dependencies; it depends on `libm`.
+
+### Compatibility
+
+The pool is purely an accelerator: frames render on the main thread until it is
+ready, on machines with fewer than three cores, and permanently after any worker
+failure. Share links and the PNG output are unchanged.
+
 ## 0.4.1 - 2026-09-09
 
 ### Fixed

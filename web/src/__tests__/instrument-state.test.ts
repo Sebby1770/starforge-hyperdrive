@@ -214,6 +214,18 @@ describe("nextAdaptiveScale", () => {
     expect(scale).toBe(3);
   });
 
+  it("climbs to Ultra under the pool budget when the pool has made it affordable", () => {
+    // Measured in the browser with an 8-worker pool: 640x392 renders in ~6.3ms
+    // and 960x588 in ~13ms. The pool budget is 85% of the 45fps frame interval.
+    const poolBudget = (1000 / 45) * 0.85;
+
+    expect(nextAdaptiveScale(4, 6.3, poolBudget)).toBe(6);
+    // Ultra at 13ms then holds rather than being demoted.
+    expect(nextAdaptiveScale(6, 13, poolBudget)).toBe(6);
+    // The stricter main-thread budget would have kept the same machine at High.
+    expect(nextAdaptiveScale(4, 6.3, budget)).toBe(4);
+  });
+
   it("recovers from an unknown scale", () => {
     expect(nextAdaptiveScale(99, 8, budget)).toBe(ADAPTIVE_SCALES[0]);
   });
